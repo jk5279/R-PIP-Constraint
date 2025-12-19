@@ -94,10 +94,9 @@ def seed_everything(seed=2023):
     torch.cuda.manual_seed_all(seed)
 
 def get_env(problem):
-    from envs import TSPDLEnv, STSPTWEnv
+    from envs import STSPTWEnv
     all_problems = {
         'STSPTW': STSPTWEnv.STSPTWEnv,
-        'TSPDL': TSPDLEnv.TSPDLEnv,
     }
     if problem == "ALL":
         return list(all_problems.values())
@@ -106,7 +105,7 @@ def get_env(problem):
 
 
 def get_opt_sol_path(dir, problem, size, hardness):
-    if problem in ["STSPTW", "TSPDL"]:
+    if problem in ["STSPTW"]:
         return os.path.join(dir, f"lkh_{problem.lower()}{size}_{hardness}.pkl")
     else:
         all_opt_sol = {

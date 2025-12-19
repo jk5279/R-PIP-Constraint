@@ -108,6 +108,7 @@ if __name__ == "__main__":
     # resume params
     parser.add_argument('--resume_path', type=str, default=None, help='path to the old run')
     parser.add_argument('--checkpoint', type=str, default=None)
+    parser.add_argument('--pip_checkpoint', type=str, default=None)
     parser.add_argument('--load_optimizer', type=bool, default=True)
     # sl loss params
     parser.add_argument('--decision_boundary', type=float, default=0.5)

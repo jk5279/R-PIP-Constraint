@@ -142,7 +142,7 @@ class STSPTWEnv:
             tw_start = tw_start / loc_factor
             tw_end = tw_end / loc_factor
             # Upper bound for depot = max(node ub + dist to depot), to make this tight
-            tw_end[:, 0] = (torch.cdist(node_xy[:, None, 0], node_xy[:, 1:]).squeeze(1) + tw_end[:, 1:]).max(dim=-1)[0]
+            tw_end[:, 0] = (torch.cdist(node_xy[:, 0:1, :], node_xy[:, 1:, :]).squeeze(1) + tw_end[:, 1:]).max(dim=-1)[0]
             # nodes_timew = nodes_timew / nodes_timew[0, 1]
 
         self.batch_size = node_xy.size(0)
@@ -611,9 +611,16 @@ class STSPTWEnv:
     def load_dataset(self, path, offset=0, num_samples=10000, disable_print=True):
         assert os.path.splitext(path)[1] == ".pkl", "Unsupported file type (.pkl needed)."
         with open(path, 'rb') as f:
-            data = pickle.load(f)[offset: offset+num_samples]
+            all_data = pickle.load(f)
+            if offset >= len(all_data):
+                if not disable_print:
+                    print(f">> Load 0 data (<class 'list'>) from {path} (offset={offset} exceeds dataset length={len(all_data)})")
+                return None
+            data = all_data[offset: offset+num_samples]
             if not disable_print:
                 print(">> Load {} data ({}) from {}".format(len(data), type(data), path))
+        if len(data) == 0:
+            return None
         node_xy, service_time, tw_start, tw_end = [i[0] for i in data], [i[1] for i in data], [i[2] for i in data], [i[3] for i in data]
         node_xy, service_time, tw_start, tw_end = torch.Tensor(node_xy), torch.Tensor(service_time), torch.Tensor(tw_start), torch.Tensor(tw_end)
 

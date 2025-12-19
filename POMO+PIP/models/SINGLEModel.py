@@ -21,7 +21,7 @@ class SINGLEModel(nn.Module):
         # shape: (batch, problem+1, EMBEDDING_DIM)
 
     def pre_forward(self, reset_state):
-        if not self.problem.startswith('TSP'):
+        if not self.problem.startswith('TSP') and not self.problem.startswith('STSP'):
             depot_xy = reset_state.depot_xy
             # shape: (batch, 1, 2)
             node_demand = reset_state.node_demand

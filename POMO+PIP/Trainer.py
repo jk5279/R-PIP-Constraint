@@ -163,18 +163,19 @@ class Trainer:
                     score, gap, infsb_rate = self._val_and_stat(dir[i], path, val_envs[i](**self.env_params), batch_size=self.trainer_params["validation_batch_size"], val_episodes=val_episodes, epoch = epoch)
                     if not self.env_params["pomo_start"]:
                         self.env_params["pomo_size"] = init_pomo_size
-                    self.result_log["val_score"].append(score)
-                    self.result_log["val_gap"].append(gap)
-                    if infsb_rate is not None:
-                        self.result_log["val_infsb_rate"].append(infsb_rate)
-                    if self.tb_logger:
-                        self.tb_logger.log_value('val_score/{}'.format(path.split(".")[0]), score, epoch)
-                        self.tb_logger.log_value('val_gap/{}'.format(path.split(".")[0]), gap, epoch)
-                        try:
-                            self.tb_logger.log_value('val_sol_infsb_rate/{}'.format(path.split(".")[0]), infsb_rate[0], epoch)
-                            self.tb_logger.log_value('val_ins_infsb_rate/{}'.format(path.split(".")[0]), infsb_rate[1], epoch)
-                        except:
-                            pass
+                    if score is not None:  # Only append if validation was successful (dataset exists)
+                        self.result_log["val_score"].append(score)
+                        self.result_log["val_gap"].append(gap)
+                        if infsb_rate is not None:
+                            self.result_log["val_infsb_rate"].append(infsb_rate)
+                        if self.tb_logger:
+                            self.tb_logger.log_value('val_score/{}'.format(path.split(".")[0]), score, epoch)
+                            self.tb_logger.log_value('val_gap/{}'.format(path.split(".")[0]), gap, epoch)
+                            try:
+                                self.tb_logger.log_value('val_sol_infsb_rate/{}'.format(path.split(".")[0]), infsb_rate[0], epoch)
+                                self.tb_logger.log_value('val_ins_infsb_rate/{}'.format(path.split(".")[0]), infsb_rate[1], epoch)
+                            except:
+                                pass
                     if self.wandb_logger:
                         wandb.log({'val_score/{}'.format(path.split(".")[0]): score})
                         wandb.log({'val_gap/{}'.format(path.split(".")[0]): gap})
@@ -246,7 +247,7 @@ class Trainer:
 
         # Log Once, for each epoch
 
-        if self.model_params["pip_decoder"] and self.is_train_pip_decoder:
+        if False:  # PIP-D removed, always use else block
             if self.trainer_params["timeout_reward"]:
                 print(
                     'Epoch {:3d}: Train ({:3.0f}%)  Score: {:.4f},  Loss: {:.4f},  Infeasible_rate: [{:.4f}%, {:.4f}%], Timeout: {:.4f}, Timeout_nodes: {:.0f}, Feasible_dist: {:.4f}'.format(
@@ -535,8 +536,14 @@ class Trainer:
         return no_aug_score, aug_score, infeasible_output
 
     def _val_and_stat(self, dir, val_path, env, batch_size=500, val_episodes=1000, compute_gap=False, epoch=1):
+        # Check if validation dataset file exists
+        dataset_path = os.path.join(dir, val_path)
+        if not os.path.exists(dataset_path):
+            print(f">> Warning: Validation dataset not found at {dataset_path}, skipping validation...")
+            return None, None, None
         no_aug_score_list, aug_score_list, no_aug_gap_list, aug_gap_list, sol_infeasible_rate_list, ins_infeasible_rate_list = [], [], [], [], [], []
         episode, no_aug_score, aug_score, sol_infeasible_rate, ins_infeasible_rate = 0, torch.zeros(0).to(self.device), torch.zeros(0).to(self.device), torch.zeros(0).to(self.device), torch.zeros(0).to(self.device)
+        used_data = None
         # if self.trainer_params["timeout_reward"]:
         #     no_aug_total_timeout_score, no_aug_timeout_nodes_score = torch.zeros(0).to(self.device), torch.zeros(0).to(self.device)
         #     aug_total_timeout_score, aug_timeout_nodes_score = torch.zeros(0).to(self.device), torch.zeros(0).to(self.device)
@@ -549,6 +556,10 @@ class Trainer:
             remaining = val_episodes - episode
             bs = min(batch_size, remaining)
             data = env.load_dataset(os.path.join(dir, val_path), offset=episode, num_samples=bs)
+            if data is None:
+                # reached end of dataset
+                break
+            used_data = data
             no_aug, aug, infsb_rate = self._val_one_batch(data, env, aug_factor=8, eval_type="argmax")
             if isinstance(aug, list):
                 no_aug, no_aug_total_timeout, no_aug_timeout_nodes = no_aug
@@ -567,7 +578,8 @@ class Trainer:
                 ins_infeasible_rate = torch.cat((ins_infeasible_rate, torch.tensor([ins_infsb_rate])), dim=0)
             except:
                 pass
-            episode += bs
+            # advance by actual loaded batch size (dataset might be smaller than requested)
+            episode += data[-1].size(0)
         if self.trainer_params["fsb_dist_only"]:
             print(">> Only feasible solutions are under consideration!")
             no_aug_score_list.append(round(no_aug_score[no_aug_feasible.bool()].mean().item(), 4))
@@ -580,14 +592,15 @@ class Trainer:
             ins_infeasible_rate_list.append(round(ins_infeasible_rate.mean().item() * 100, 3))
 
         try:
-            sol_path = get_opt_sol_path(dir, env.problem, data[1].size(1))
+            problem_size = env.problem_size if hasattr(env, "problem_size") else (used_data[1].size(1) if used_data is not None else None)
+            sol_path = get_opt_sol_path(dir, env.problem, problem_size)
         except:
             sol_path = os.path.join(dir, "lkh_" + val_path)
 
         compute_gap = os.path.exists(sol_path)
 
         if compute_gap:
-            opt_sol = load_dataset(sol_path, disable_print=True)[: val_episodes]
+            opt_sol = load_dataset(sol_path, disable_print=True)[: episode]
             # grid_factor = 1.
             grid_factor = 100. if self.args.problem == "STSPTW" else 1.
             opt_sol = torch.tensor([i[0]/grid_factor for i in opt_sol])

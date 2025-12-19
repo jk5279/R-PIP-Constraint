@@ -1,0 +1,51 @@
+# SLURM job submission files
+*.slurm
+*.out
+*.err
+job_submission_logs/
+
+# Shell scripts
+*.sh
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Results and checkpoints (optional - uncomment if you don't want to track these)
+# results/
+# *.pt
+
+# Training outputs
+POMO+PIP/results/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
