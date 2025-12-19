@@ -130,7 +130,7 @@ R-PIP-constraint/
 - **PIP Framework**: Implements proactive infeasibility prevention through Lagrangian multipliers and masking
 - **STSPTW Focus**: Specialized implementation for Stochastic Traveling Salesman Problem with Time Windows, where distance measurements include additive noise U(0, √2) sampled independently at each step
 - **PIP Buffer Term**: Configurable buffer term (default: √2) added to distance calculations in PIP lookahead filtering to account for stochastic noise uncertainty. Use `--pip_buffer` to adjust the buffer value.
-- **PID-Lagrangian λ (Dynamic Penalty)**: Optional PID controller to adapt the penalty multiplier λ during training using EMA-smoothed `ins_infeasible_rate` feedback (default: λ0=0.1, Kp=0.1, Ki=0.01, Kd=0; λ bounded in [0, 10]). Enable via `--pid_lambda`.
+- **PID-Lagrangian λ (Dynamic Penalty)**: Optional PID controller (Position Form) to adapt the penalty multiplier λ during training using EMA-smoothed `ins_infeasible_rate` feedback (default: λ0=0.1, Kp=0.1, Ki=0.01, Kd=0; λ bounded in [0, 10]). The Position Form implementation prevents double-integration instability by calculating lambda directly as `λ = λ_init + P + I + D` rather than accumulating updates. Enable via `--pid_lambda`.
 - **Unified Problem Generation**: All hardness levels use the same α/β-based generation method, making the system robust to distance function modifications
 - **Pretrained Models**: Includes pretrained models for various problem sizes and hardness levels
 

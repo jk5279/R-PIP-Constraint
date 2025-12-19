@@ -629,6 +629,121 @@ torch.save(checkpoint_dict, '{}/epoch-{}.pt'.format(self.log_path, epoch))
 - **EMA smoothing**: Essential for noisy RL signals
 - **Bounds**: Prevent negative lambda (would reward violations) and excessive lambda (would freeze agent)
 
+#### 3.2.5 Position Form Conversion (Stability Fix)
+
+**Overview:** The original velocity-form PID controller had a double-integration instability where lambda would continue growing linearly even when the error became zero. This was fixed by converting to Position Form, where lambda is calculated directly from PID terms rather than accumulating updates.
+
+**Mathematical Change:**
+
+**Old (Velocity Form - Unstable):**
+```
+delta = Kp * error + Ki * integral + Kd * derivative
+lambda_new = lambda_old + delta
+```
+*(If error becomes 0, lambda_old remains constant, so delta keeps growing linearly forever.)*
+
+**New (Position Form - Stable):**
+```
+lambda = lambda_init + Kp * error + Ki * integral + Kd * derivative
+```
+*(If error becomes 0, lambda stabilizes at a constant value based on the integral term.)*
+
+**Implementation Changes:**
+
+**Location:** `POMO+PIP/pid_lagrangian.py`
+
+1. **Store `lambda_init` as class attribute:**
+   ```python
+   # OLD:
+   lambda_init = float(lambda_init)
+   self.state = PIDLambdaState(...)
+   
+   # NEW:
+   self.lambda_init = float(lambda_init)  # Stored as bias
+   self.state = PIDLambdaState(...)
+   ```
+
+2. **Update `step()` method - Position Form calculation:**
+   ```python
+   # OLD (Velocity Form):
+   delta = (self.Kp * ema_error) + (self.Ki * error_integral) + (self.Kd * d_error)
+   lambda_val = self.state.lambda_val + delta
+   
+   # NEW (Position Form):
+   p_term = self.Kp * ema_error
+   i_term = self.Ki * error_integral
+   d_term = self.Kd * d_error
+   raw_lambda = self.lambda_init + p_term + i_term + d_term
+   lambda_val = _clamp(raw_lambda, self.lambda_min, self.lambda_max)
+   ```
+
+3. **Update return dict to include individual terms:**
+   ```python
+   return {
+       "lambda_val": self.state.lambda_val,
+       "signal": sig,
+       "error": error,
+       "ema_error": self.state.ema_error,
+       "error_integral": self.state.error_integral,
+       "p_term": p_term,  # New: for debugging
+       "i_term": i_term,  # New: for debugging
+       "d_term": d_term,  # New: for debugging
+       "delta": p_term + i_term + d_term,  # Kept for backward compatibility
+   }
+   ```
+
+4. **Update `state_dict()` to include `lambda_init`:**
+   ```python
+   return {
+       "config": {
+           "lambda_init": self.lambda_init,  # Added to config
+           "Kp": self.Kp,
+           # ... other config ...
+       },
+       "state": asdict(self.state),
+   }
+   ```
+
+5. **Update `load_state_dict()` to restore `lambda_init`:**
+   ```python
+   if "config" in d:
+       config = d["config"]
+       self.lambda_init = float(config.get("lambda_init", self.lambda_init))
+       # ... load other config ...
+   ```
+
+6. **Update docstring:**
+   ```python
+   """
+   PID controller (Position Form) for adapting a non-negative Lagrange multiplier.
+   
+   Fixes double-integration issue by mapping PID output directly to lambda value.
+   The 'Integral' term maintains the history necessary to enforce constraints.
+   """
+   ```
+
+7. **Update integral limit calculation:**
+   ```python
+   # Removed the min(integral_limit, 100.0) cap
+   # In Position Form, the integral term alone can drive lambda up to lambda_max
+   integral_limit = self.lambda_max / max(abs(self.Ki), eps)
+   ```
+
+**Tuning Implications:**
+
+With Position Form, the PID gains have slightly different meanings:
+- **Ki (Integral Gain)**: Now the most important parameter. It dictates how large the penalty becomes for a given history of errors. Rule of thumb: If maximum necessary lambda is ~10.0 and errors accumulate to ~100.0, Ki should be around 10.0 / 100.0 = 0.1.
+- **Kp (Proportional Gain)**: Provides a temporary "spike" in lambda only while the error is currently high. As soon as error drops, this term vanishes. Good for fast reaction but cannot sustain a high penalty alone.
+- **Kd (Derivative Gain)**: Remains a dampener.
+
+**Backward Compatibility:**
+
+The `Trainer.py` interface remains unchanged:
+- `pid_info = self.pid_lambda_controller.step(float(ins_infeasible_rate))` continues to work
+- `pid_info["lambda_val"]` is still available
+- `pid_info["delta"]` remains available for logging (backward compatibility)
+- New terms `pid_info["p_term"]`, `pid_info["i_term"]`, `pid_info["d_term"]` are available for enhanced debugging
+
 ---
 
 ## 4. Validation Dataset Handling
