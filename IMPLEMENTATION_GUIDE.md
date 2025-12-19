@@ -769,36 +769,6 @@ echo "All validation datasets generated!"
 
 ---
 
-## Testing Checklist
-
-After implementing these changes, verify:
-
-1. **STSPTW Problem Generation:**
-   - [ ] Noise is added to distance calculations at each step
-   - [ ] Initial distances (depot) remain noiseless
-   - [ ] All hardness levels use unified α/β method
-   - [ ] Generated datasets have correct structure
-
-2. **PIP Buffer:**
-   - [ ] Buffer is added to PIP lookahead distances
-   - [ ] Buffer defaults to √2
-   - [ ] Buffer is configurable via `--pip_buffer`
-   - [ ] Buffer is added before dividing by speed
-
-3. **PID Lambda Controller:**
-   - [ ] Lambda updates each epoch based on infeasibility rate
-   - [ ] Lambda is logged to TensorBoard/W&B
-   - [ ] Lambda state is saved/restored in checkpoints
-   - [ ] Lambda respects bounds [0, lambda_max]
-   - [ ] Integral windup protection works
-
-4. **Validation:**
-   - [ ] Validation handles datasets smaller than requested
-   - [ ] Validation datasets have 10K samples
-   - [ ] No indexing errors when dataset is exhausted
-
----
-
 ## References
 
 - Original PIP-constraint repository: https://github.com/jieyibi/PIP-constraint
