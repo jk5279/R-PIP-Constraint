@@ -1,15 +1,15 @@
 # R-PIP-constraint
 
-PyTorch implementation of the **Proactive Infeasibility Prevention (PIP)** framework for the Traveling Salesman Problem with Time Windows (TSPTW), built on [POMO](https://github.com/yd-kwon/POMO).
+PyTorch implementation of the **Proactive Infeasibility Prevention (PIP)** framework for the Stochastic Traveling Salesman Problem with Time Windows (STSPTW), built on [POMO](https://github.com/yd-kwon/POMO).
 
 ## Overview
 
-This repository contains a streamlined implementation of the PIP framework focused on TSPTW. PIP is an effective approach that integrates Lagrangian multipliers to enhance constraint awareness and introduces preventative infeasibility masking to proactively guide solution construction.
+This repository contains a streamlined implementation of the PIP framework focused on STSPTW. PIP is an effective approach that integrates Lagrangian multipliers to enhance constraint awareness and introduces preventative infeasibility masking to proactively guide solution construction.
 
 **Note:** This is a simplified version of the original [PIP-constraint](https://github.com/jieyibi/PIP-constraint) repository, containing only:
-- TSPTW problem implementation
+- STSPTW problem implementation
 - POMO and POMO+PIP training and evaluation code
-- TSPTW datasets and pretrained models
+- STSPTW datasets and pretrained models
 
 ## Paper
 
@@ -43,13 +43,20 @@ pip install matplotlib tqdm pytz scikit-learn tensorflow tensorboard_logger pand
 
 ### Generate Data
 
-Generate TSPTW instances for evaluation:
+Generate STSPTW instances for evaluation. The generation method uses a unified α/β-based approach for all hardness levels:
 
 ```bash
 cd POMO+PIP
-# Default: --problem_size=50 --problem="TSPTW" --hardness="hard"
-python generate_data.py --problem=TSPTW --problem_size=50 --hardness=hard
+# Default: --problem_size=50 --problem="STSPTW" --hardness="hard"
+python generate_data.py --problem=STSPTW --problem_size=50 --hardness=hard
 ```
+
+**Hardness Levels:**
+- `easy`: α = 0.5, β = 0.75 (Wide time windows, loose constraints)
+- `medium`: α = 0.3, β = 0.48 (Moderate constraints)
+- `hard`: α = 0.1, β = 0.2 (Narrow time windows, tight constraints)
+
+The α and β parameters control the time window duration range as a fraction of the time factor, where time windows are sampled uniformly from [α × time_factor, β × time_factor]. All hardness levels use the same generation method, making the system robust to distance function modifications. STSPTW adds stochastic noise U(0, √2) to distance calculations at each step, where noise is sampled independently for each distance measurement.
 
 ### Training
 
@@ -59,13 +66,13 @@ Train POMO* or POMO* + PIP models:
 cd POMO+PIP
 
 # Train POMO* baseline
-python train.py --problem=TSPTW --hardness=hard --problem_size=50 --pomo_size=50
+python train.py --problem=STSPTW --hardness=hard --problem_size=50 --pomo_size=50
 
 # Train POMO* + PIP
-python train.py --problem=TSPTW --hardness=hard --problem_size=50 --pomo_size=50 --generate_PI_mask
+python train.py --problem=STSPTW --hardness=hard --problem_size=50 --pomo_size=50 --generate_PI_mask
 
 # Resume training (optional)
-python train.py --problem=TSPTW --hardness=hard --problem_size=50 --checkpoint=path/to/checkpoint.pt --resume_path=path/to/logs
+python train.py --problem=STSPTW --hardness=hard --problem_size=50 --checkpoint=path/to/checkpoint.pt --resume_path=path/to/logs
 ```
 
 ### Evaluation
@@ -76,10 +83,10 @@ Evaluate trained models:
 cd POMO+PIP
 
 # Evaluate POMO* on provided dataset
-python test.py --problem=TSPTW --hardness=hard --problem_size=50 --checkpoint=pretrained/TSPTW/tsptw50_hard/POMO_star/epoch-10000.pt
+python test.py --problem=STSPTW --hardness=hard --problem_size=50 --checkpoint=pretrained/STSPTW/stsptw50_hard/POMO_star/epoch-10000.pt
 
 # Evaluate POMO* + PIP on provided dataset
-python test.py --problem=TSPTW --hardness=hard --problem_size=50 --checkpoint=pretrained/TSPTW/tsptw50_hard/POMO_star_PIP/epoch-10000.pt --generate_PI_mask
+python test.py --problem=STSPTW --hardness=hard --problem_size=50 --checkpoint=pretrained/STSPTW/stsptw50_hard/POMO_star_PIP/epoch-10000.pt --generate_PI_mask
 
 # Evaluate on custom dataset
 python test.py --test_set_path=path/to/test_data.pkl --checkpoint=path/to/model.pt --generate_PI_mask
@@ -93,14 +100,14 @@ python test.py --test_set_path=path/to/test_data.pkl --checkpoint=path/to/model.
 ```
 R-PIP-constraint/
 ├── POMO+PIP/          # Main implementation directory
-│   ├── envs/          # TSPTW environment
+│   ├── envs/          # STSPTW environment
 │   ├── models/        # Neural network models
 │   ├── pretrained/    # Pretrained model checkpoints
 │   ├── train.py       # Training script
 │   ├── test.py        # Evaluation script
 │   └── generate_data.py  # Data generation script
-├── data/              # TSPTW datasets
-│   └── TSPTW/
+├── data/              # STSPTW datasets
+│   └── STSPTW/
 └── README.md
 ```
 
@@ -108,7 +115,8 @@ R-PIP-constraint/
 
 - **POMO Integration**: Built on top of the POMO (Policy Optimization with Multiple Optima) framework
 - **PIP Framework**: Implements proactive infeasibility prevention through Lagrangian multipliers and masking
-- **TSPTW Focus**: Specialized implementation for Traveling Salesman Problem with Time Windows
+- **STSPTW Focus**: Specialized implementation for Stochastic Traveling Salesman Problem with Time Windows, where distance measurements include additive noise U(0, √2) sampled independently at each step
+- **Unified Problem Generation**: All hardness levels use the same α/β-based generation method, making the system robust to distance function modifications
 - **Pretrained Models**: Includes pretrained models for various problem sizes and hardness levels
 
 ## Acknowledgments
