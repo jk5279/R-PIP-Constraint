@@ -37,7 +37,7 @@ def args2dict(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Proactive Infeasibility Prevention (PIP) Framework for Routing Problems with Complex Constraints.")
     # env_params
-    parser.add_argument('--problem', type=str, default="TSPTW", choices=["TSPTW"])
+    parser.add_argument('--problem', type=str, default="STSPTW", choices=["STSPTW"])
     parser.add_argument('--hardness', type=str, default="hard", choices=["hard", "medium", "easy"], help="Different levels of constraint hardness")
     parser.add_argument('--problem_size', type=int, default=50)
     parser.add_argument('--pomo_size', type=int, default=1, help="the number of start node, should <= problem size")
@@ -61,7 +61,7 @@ if __name__ == "__main__":
     parser.add_argument('--k_sparse', type=int, default=500)
     parser.add_argument('--decision_boundary', type=float, default=0.5)
     # tester_params
-    parser.add_argument('--checkpoint', type=str, default="pretrained/TSPTW/tsptw50_hard/POMO_star_PIP/epoch-10000.pt")
+    parser.add_argument('--checkpoint', type=str, default="pretrained/STSPTW/stsptw50_hard/POMO_star_PIP/epoch-10000.pt")
     parser.add_argument('--test_episodes', type=int, default=10000)
     parser.add_argument('--test_batch_size', type=int, default=2500)
     parser.add_argument('--eval_type', type=str, default="argmax", choices=["argmax", "softmax"])

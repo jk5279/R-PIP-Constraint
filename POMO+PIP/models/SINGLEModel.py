@@ -34,7 +34,7 @@ class SINGLEModel(nn.Module):
         if self.problem in ["CVRP", "OVRP", "VRPB", "VRPL", "VRPBL", "OVRPB", "OVRPL", "OVRPBL"]:
             feature = torch.cat((node_xy, node_demand[:, :, None]), dim=2)
             # shape: (batch, problem, 3)
-        elif self.problem in ["TSPTW"]:
+        elif self.problem in ["STSPTW"]:
             node_tw_start = reset_state.node_tw_start
             node_tw_end = reset_state.node_tw_end
             # shape: (batch, problem)
@@ -110,7 +110,7 @@ class SINGLEModel(nn.Module):
             attr = state.load[:, :, None]
         elif self.problem in ["VRPB"]:
             attr = state.load[:, :, None]  # shape: (batch, pomo, 1)
-        elif self.problem in ["TSPTW"]:
+        elif self.problem in ["STSPTW"]:
             attr = state.current_time[:, :, None]  # shape: (batch, pomo, 1)
             if self.model_params["tw_normalize"]:
                 attr = attr / tw_end[:, 0][:, None, None]
@@ -167,7 +167,7 @@ class SINGLE_Encoder(nn.Module):
             self.embedding_depot = nn.Linear(2, embedding_dim)
         if self.problem in ["CVRP", "OVRP", "VRPB", "VRPL", "VRPBL", "OVRPB", "OVRPL", "OVRPBL"]:
             self.embedding_node = nn.Linear(3, embedding_dim)
-        elif self.problem in ["TSPTW", "TSPDL"]:
+        elif self.problem in ["STSPTW", "TSPDL"]:
             self.embedding_node = nn.Linear(4, embedding_dim)
         elif self.problem in ["VRPTW", "OVRPTW", "VRPBTW", "VRPLTW", "OVRPBTW", "OVRPLTW", "VRPBLTW", "OVRPBLTW"]:
             self.embedding_node = nn.Linear(5, embedding_dim)
@@ -262,7 +262,7 @@ class SINGLE_Decoder(nn.Module):
         # self.Wq_2 = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
         if self.problem == "CVRP":
             self.Wq_last = nn.Linear(embedding_dim + 1, head_num * qkv_dim, bias=False)
-        elif self.problem in ["VRPB", "TSPTW"]:
+        elif self.problem in ["VRPB", "STSPTW"]:
             self.Wq_last = nn.Linear(embedding_dim + 1, head_num * qkv_dim, bias=False)
         elif self.problem in ["OVRP", "OVRPB", "VRPTW", "VRPBTW", "VRPL", "VRPBL"]:
             attr_num = 3 if self.model_params["extra_feature"] else 2

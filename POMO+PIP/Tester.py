@@ -52,8 +52,8 @@ class Tester:
                         no_aug_score, aug_score, ins_infeasible_rate, sol_infeasible_rate = self._solve_tspdllib(path, env_class)
                         name = path.split('/')[-1].split('.pkl')[0]
                         results.append([name, no_aug_score, aug_score, ins_infeasible_rate, sol_infeasible_rate])
-                    elif self.args.problem == "TSPTW":
-                        no_aug_score, aug_score, ins_infeasible_rate, sol_infeasible_rate = self._solve_tsptwlib(path, env_class)
+                    elif self.args.problem == "STSPTW":
+                        no_aug_score, aug_score, ins_infeasible_rate, sol_infeasible_rate = self._solve_stsptwlib(path, env_class)
                         name = path.split('/')[-1].split('.pkl')[0]
                         results.append([name, no_aug_score, aug_score, ins_infeasible_rate, sol_infeasible_rate])
                     else:
@@ -97,7 +97,7 @@ class Tester:
                     else get_opt_sol_path(os.path.join(self.data_dir, env.problem), env.problem, env.problem_size)
                 print(">> Load optimal solution path: {}".format(opt_sol_path))
                 opt_sol = load_dataset(opt_sol_path, disable_print=True)[episode: episode + batch_size]  # [(obj, route), ...]
-                opt_sol = [i[0] /100 for i in opt_sol] if self.args.problem=="TSPTW" else [i[0]  for i in opt_sol]
+                opt_sol = [i[0] /100 for i in opt_sol] if self.args.problem=="STSPTW" else [i[0]  for i in opt_sol]
                 opt_sols = torch.cat((opt_sols, torch.tensor(opt_sol).float()), dim=0)
                 if self.tester_params['fsb_dist_only']:
                     gap, aug_gap = [], []
@@ -163,7 +163,7 @@ class Tester:
         while not done:
 
             selected, prob = self.model(state, pomo=self.env_params["pomo_start"],
-                                                      tw_end=env.node_tw_end if self.args.problem == "TSPTW" else None)
+                                                      tw_end=env.node_tw_end if self.args.problem == "STSPTW" else None)
             # shape: (batch, pomo)
             state, reward, done, infeasible = env.step(selected,
                                                        generate_PI_mask=self.model_params["generate_PI_mask"],
@@ -214,7 +214,7 @@ class Tester:
 
         return no_aug_score_mean.item(), aug_score_mean.item(), no_aug_score, aug_score, sol_infeasible_rate, ins_infeasible_rate, no_aug_feasible, aug_feasible
 
-    def _solve_tsptwlib(self, path, env_class):
+    def _solve_stsptwlib(self, path, env_class):
         with open(path, 'rb') as f:
             data = pickle.load(f)
             # print(">> Load data from {}".format(path))

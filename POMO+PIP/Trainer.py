@@ -373,7 +373,7 @@ class Trainer:
         while not done:
             # Forward
             selected, prob = self.model(state, pomo=self.env_params["pomo_start"],
-                                            tw_end = env.node_tw_end if self.problem == "TSPTW" else None)
+                                            tw_end = env.node_tw_end if self.problem == "STSPTW" else None)
 
             # Step
             state, reward, done, infeasible = env.step(selected,
@@ -478,7 +478,7 @@ class Trainer:
             state, reward, done = env.pre_step()
             while not done:
                 selected, prob = self.model(state, pomo=self.env_params["pomo_start"],
-                                               tw_end = env.node_tw_end if self.problem == "TSPTW" else None)
+                                               tw_end = env.node_tw_end if self.problem == "STSPTW" else None)
                 # shape: (batch, pomo)
                 state, reward, done, infeasible = env.step(selected,
                                                            generate_PI_mask=self.trainer_params["generate_PI_mask"],
@@ -589,7 +589,7 @@ class Trainer:
         if compute_gap:
             opt_sol = load_dataset(sol_path, disable_print=True)[: val_episodes]
             # grid_factor = 1.
-            grid_factor = 100. if self.args.problem == "TSPTW" else 1.
+            grid_factor = 100. if self.args.problem == "STSPTW" else 1.
             opt_sol = torch.tensor([i[0]/grid_factor for i in opt_sol])
             if self.trainer_params["fsb_dist_only"]:
                 gap = (no_aug_score[no_aug_feasible.bool()] - opt_sol[no_aug_feasible.bool()]) / opt_sol[no_aug_feasible.bool()] * 100
