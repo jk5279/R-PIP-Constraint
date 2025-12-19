@@ -181,7 +181,8 @@ if __name__ == "__main__":
     else:
         name = process_start_time.strftime("%Y%m%d_%H%M%S") + run_name + f"_jid{unique_tag}"
         args.log_path = os.path.join(args.log_dir, name)
-    os.makedirs(args.log_path, exist_ok=False)
+    # For resume runs, the directory should already exist. For new runs, fail fast on collisions.
+    os.makedirs(args.log_path, exist_ok=(args.resume_path is not None))
     print(">> Log Path: {}".format(args.log_path))
     # set gpu
     if args.multiple_gpu:
