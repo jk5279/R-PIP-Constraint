@@ -47,10 +47,6 @@ class SINGLEModel(nn.Module):
                 tw_end = tw_end / tw_end_max
             feature =  torch.cat((node_xy, tw_start, tw_end), dim=2)
             # shape: (batch, problem, 4)
-        elif self.problem in ['TSPDL']:
-            node_demand = reset_state.node_demand
-            node_draft_limit = reset_state.node_draft_limit
-            feature = torch.cat((node_xy, node_demand[:, :, None], node_draft_limit[:, :, None]), dim=2)
         elif self.problem in ["VRPTW", "OVRPTW", "VRPBTW", "VRPLTW", "OVRPBTW", "OVRPLTW", "VRPBLTW", "OVRPBLTW"]:
             node_tw_start = reset_state.node_tw_start
             node_tw_end = reset_state.node_tw_end
@@ -64,42 +60,29 @@ class SINGLEModel(nn.Module):
         # shape: (batch, problem(+1), embedding)
 
         self.decoder.set_kv(self.encoded_nodes)
-        if self.model_params["pip_decoder"] and self.model_params["W_kv_sl"]:
-            self.decoder.set_kv_sl(self.encoded_nodes)
 
         return self.encoded_nodes, feature
 
     def set_eval_type(self, eval_type):
         self.eval_type = eval_type
 
-    def forward(self, state, selected=None, pomo = False, use_predicted_PI_mask=False, no_select_prob=False, no_sigmoid=False, tw_end=None):
+    def forward(self, state, selected=None, pomo = False, no_select_prob=False, no_sigmoid=False, tw_end=None):
         batch_size = state.BATCH_IDX.size(0)
         pomo_size = state.BATCH_IDX.size(1)
 
         if state.selected_count == 0:  # First Move, depot
             selected = torch.zeros(size=(batch_size, pomo_size), dtype=torch.long).to(self.device)
             prob = torch.ones(size=(batch_size, pomo_size))
-            if self.model_params["pip_decoder"]:
-                probs_sl = torch.ones(size=(batch_size, pomo_size))
             # shape: (batch, pomo, problem_size+1)
         elif pomo and state.selected_count == 1 and pomo_size > 1:  # Second Move, POMO
             selected = state.START_NODE
             prob = torch.ones(size=(batch_size, pomo_size))
-            if self.model_params["pip_decoder"]:
-                probs_sl = torch.ones(size=(batch_size, pomo_size))
         else: # Sample from the action distribution
             encoded_last_node = _get_encoding(self.encoded_nodes, state.current_node)
             # shape: (batch, pomo, embedding)
             attr = self.get_context(state, tw_end)
             ninf_mask = state.ninf_mask
-            if self.model_params["pip_decoder"]: # auxiliary decoder to predict whether nodes are feasible
-                if not no_select_prob:
-                    probs, probs_sl = self.decoder(encoded_last_node, attr, ninf_mask=ninf_mask, use_predicted_PI_mask = use_predicted_PI_mask, no_sigmoid=no_sigmoid)
-                else:
-                    probs_sl = self.decoder(encoded_last_node, attr, ninf_mask=ninf_mask, use_predicted_PI_mask=use_predicted_PI_mask, no_select_prob=no_select_prob, no_sigmoid=no_sigmoid)
-                    return probs_sl
-            else:
-                probs = self.decoder(encoded_last_node, attr, ninf_mask=ninf_mask)
+            probs = self.decoder(encoded_last_node, attr, ninf_mask=ninf_mask)
 
             if selected is None:
                 while True:
@@ -120,14 +103,12 @@ class SINGLEModel(nn.Module):
                 selected = selected
                 prob = probs[state.BATCH_IDX, state.POMO_IDX, selected].reshape(batch_size, pomo_size)
 
-        if self.model_params['pip_decoder']:
-            return selected, [prob, probs_sl]
         return selected, prob
 
     def get_context(self, state, tw_end):
         if self.problem in ["CVRP"]:
             attr = state.load[:, :, None]
-        elif self.problem in ["VRPB", 'TSPDL']:
+        elif self.problem in ["VRPB"]:
             attr = state.load[:, :, None]  # shape: (batch, pomo, 1)
         elif self.problem in ["TSPTW"]:
             attr = state.current_time[:, :, None]  # shape: (batch, pomo, 1)
@@ -281,40 +262,22 @@ class SINGLE_Decoder(nn.Module):
         # self.Wq_2 = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
         if self.problem == "CVRP":
             self.Wq_last = nn.Linear(embedding_dim + 1, head_num * qkv_dim, bias=False)
-            if self.model_params["pip_decoder"]:
-                self.Wq_last_sl = nn.Linear(embedding_dim + 1, head_num * qkv_dim, bias=False)
-        elif self.problem in ["VRPB", "TSPTW", "TSPDL"]:
+        elif self.problem in ["VRPB", "TSPTW"]:
             self.Wq_last = nn.Linear(embedding_dim + 1, head_num * qkv_dim, bias=False)
-            if self.model_params["pip_decoder"]:
-                self.Wq_last_sl = nn.Linear(embedding_dim + 1, head_num * qkv_dim, bias=False)
         elif self.problem in ["OVRP", "OVRPB", "VRPTW", "VRPBTW", "VRPL", "VRPBL"]:
             attr_num = 3 if self.model_params["extra_feature"] else 2
             self.Wq_last = nn.Linear(embedding_dim + attr_num, head_num * qkv_dim, bias=False)
-            if self.model_params["pip_decoder"]:
-                self.Wq_last_sl = nn.Linear(embedding_dim + attr_num, head_num * qkv_dim, bias=False)
         elif self.problem in ["VRPLTW", "VRPBLTW", "OVRPL", "OVRPBL", "OVRPTW", "OVRPBTW"]:
             self.Wq_last = nn.Linear(embedding_dim + 3, head_num * qkv_dim, bias=False)
-            if self.model_params["pip_decoder"]:
-                self.Wq_last_sl = nn.Linear(embedding_dim + 3, head_num * qkv_dim, bias=False)
         elif self.problem in ["OVRPLTW", "OVRPBLTW"]:
             self.Wq_last = nn.Linear(embedding_dim + 4, head_num * qkv_dim, bias=False)
-            if self.model_params["pip_decoder"]:
-                self.Wq_last_sl = nn.Linear(embedding_dim + 4, head_num * qkv_dim, bias=False)
         else:
             raise NotImplementedError
 
         self.Wk = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
         self.Wv = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
-        if self.model_params["pip_decoder"] and self.model_params['W_kv_sl']:
-            self.Wk_sl = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
-            self.Wv_sl = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
-            self.k_sl = None  # saved key, for multi-head_attention
-            self.v_sl = None  # saved value, for multi-head_attention
-            self.single_head_key_sl = None
 
         self.multi_head_combine = nn.Linear(head_num * qkv_dim, embedding_dim)
-        if self.model_params["pip_decoder"] and self.model_params['W_out_sl']:
-            self.multi_head_combine_sl = nn.Linear(head_num * qkv_dim, embedding_dim)
 
         self.k = None  # saved key, for multi-head_attention
         self.v = None  # saved value, for multi-head_attention
@@ -332,22 +295,6 @@ class SINGLE_Decoder(nn.Module):
         self.single_head_key = encoded_nodes.transpose(1, 2)
         # shape: (batch, embedding, problem+1)
 
-    def set_kv_sl(self, encoded_nodes):
-        # encoded_nodes.shape: (batch, problem+1, embedding)
-        head_num = self.model_params['head_num']
-
-        if self.model_params['detach_from_encoder']:
-            self.k_sl = reshape_by_heads(self.Wk_sl(encoded_nodes.detach()), head_num=head_num)
-            self.v_sl = reshape_by_heads(self.Wv_sl(encoded_nodes.detach()), head_num=head_num)
-            # shape: (batch, head_num, problem+1, qkv_dim)
-            self.single_head_key_sl = encoded_nodes.transpose(1, 2).detach()
-            # shape: (batch, embedding, problem+1)
-        else:
-            self.k_sl = reshape_by_heads(self.Wk_sl(encoded_nodes), head_num=head_num)
-            self.v_sl = reshape_by_heads(self.Wv_sl(encoded_nodes), head_num=head_num)
-            self.single_head_key_sl = encoded_nodes.transpose(1, 2)
-
-
     def set_q1(self, encoded_q1):
         # encoded_q.shape: (batch, n, embedding)  # n can be 1 or pomo
         head_num = self.model_params['head_num']
@@ -360,7 +307,7 @@ class SINGLE_Decoder(nn.Module):
         self.q2 = reshape_by_heads(self.Wq_2(encoded_q2), head_num=head_num)
         # shape: (batch, head_num, n, qkv_dim)
 
-    def forward(self, encoded_last_node, attr, ninf_mask, use_predicted_PI_mask=False, no_select_prob = False, no_sigmoid=False):
+    def forward(self, encoded_last_node, attr, ninf_mask, no_select_prob = False, no_sigmoid=False):
         # encoded_last_node.shape: (batch, pomo, embedding)
         # load.shape: (batch, 1~4)
         # ninf_mask.shape: (batch, pomo, problem)
@@ -371,46 +318,6 @@ class SINGLE_Decoder(nn.Module):
         #######################################################
         input_cat = torch.cat((encoded_last_node, attr), dim=2)
         # shape = (batch, group, EMBEDDING_DIM+1)
-
-        if self.model_params['pip_decoder']:
-            if isinstance(use_predicted_PI_mask, bool):
-                if self.model_params['detach_from_encoder']:
-                    q_last_sl = reshape_by_heads(self.Wq_last_sl(input_cat.detach()), head_num=head_num)
-                else:
-                    q_last_sl = reshape_by_heads(self.Wq_last_sl(input_cat), head_num=head_num)
-
-                ninf_mask_sl = ninf_mask if self.model_params['use_ninf_mask_in_sl_MHA'] else None
-                if self.model_params['W_kv_sl']:
-                    out_concat_sl = multi_head_attention(q_last_sl, self.k_sl, self.v_sl, rank3_ninf_mask=ninf_mask_sl)
-                else:
-                    out_concat_sl = multi_head_attention(q_last_sl, self.k, self.v, rank3_ninf_mask=ninf_mask_sl)
-                if self.model_params['W_out_sl']:
-                    mh_atten_out_sl = self.multi_head_combine_sl(out_concat_sl)
-                else:
-                    mh_atten_out_sl = self.multi_head_combine(out_concat_sl)
-
-                if self.model_params['W_kv_sl']:
-                    score_sl = torch.matmul(mh_atten_out_sl, self.single_head_key_sl)
-                else:
-                    score_sl = torch.matmul(mh_atten_out_sl, self.single_head_key)
-
-                probs_sl = score_sl if no_sigmoid else torch.sigmoid(score_sl)
-                if no_select_prob:
-                    return probs_sl
-            else:
-                probs_sl = use_predicted_PI_mask
-
-            if not isinstance(use_predicted_PI_mask, bool) or use_predicted_PI_mask:
-                ninf_mask0 =  ninf_mask.clone()
-                if isinstance(probs_sl, list):
-                    for i in range(len(probs_sl)):
-                        ninf_mask = ninf_mask +torch.where(probs_sl[i] > self.model_params["decision_boundary"], float('-inf'),ninf_mask) if not no_sigmoid \
-                            else torch.where(torch.sigmoid(probs_sl[i]) > self.model_params["decision_boundary"], float('-inf'), ninf_mask)
-                else:
-                    ninf_mask = torch.where(probs_sl>self.model_params["decision_boundary"], float('-inf'), ninf_mask) if not no_sigmoid \
-                        else torch.where(torch.sigmoid(probs_sl)>self.model_params["decision_boundary"], float('-inf'), ninf_mask)
-                all_infsb = ((ninf_mask == float('-inf')).all(dim=-1)).unsqueeze(-1).expand(-1, -1, self.single_head_key.size(-1))
-                ninf_mask = torch.where(all_infsb, ninf_mask0, ninf_mask)
         # shape: (batch, head_num, pomo, qkv_dim)
 
         q_last = reshape_by_heads(self.Wq_last(input_cat), head_num=head_num)
@@ -440,9 +347,6 @@ class SINGLE_Decoder(nn.Module):
 
         probs = F.softmax(score_masked, dim=2)
         # shape: (batch, pomo, problem)
-
-        if self.model_params['pip_decoder']:
-            return probs, probs_sl
 
         return probs
 

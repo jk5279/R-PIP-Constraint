@@ -34,53 +34,6 @@ class Trainer:
         self.scheduler = Scheduler(self.optimizer, **self.optimizer_params['scheduler'])
         num_param(self.model)
 
-
-        if self.model_params["pip_decoder"]:
-            self.is_train_pip_decoder = True if self.trainer_params["simulation_stop_epoch"] > 0 else False
-            self.accuracy_bsf, self.fsb_accuracy_bsf, self.infsb_accuracy_bsf =  0., 0., 0.
-            self.accuracy_isbsf, self.fsb_accuracy_isbsf, self.infsb_accuracy_isbsf = False, False, False
-
-            self.train_sl_epoch_list = list(range(1, self.trainer_params["simulation_stop_epoch"] + 1))
-
-            for start in range(self.trainer_params["pip_update_interval"], self.trainer_params["epochs"] + 1, self.trainer_params["pip_update_interval"]):
-                self.train_sl_epoch_list.extend(range(start - self.trainer_params["pip_update_epoch"] + 1, start + 1))
-
-            if self.trainer_params["pip_last_growup"] > self.trainer_params["pip_update_epoch"]:
-                self.train_sl_epoch_list.extend(range(self.trainer_params["epochs"] - self.trainer_params["pip_last_growup"] + 1, self.trainer_params["epochs"]+1))
-
-            self.load_sl_epoch_list = [self.trainer_params["simulation_stop_epoch"] + 1] + list(range(1, self.trainer_params["epochs"] - self.trainer_params["pip_last_growup"] + 1, self.trainer_params["pip_update_interval"]))[1:]
-
-            # print(self.train_sl_epoch_list)
-            # print(self.load_sl_epoch_list)
-
-            # PIP decoder does not update frequently,
-            # Hence we record the latest updated one and use it to predict PI mask until the next update
-            if self.trainer_params["lazy_pip_model"]:
-                self.lazy_model = SINGLEModel(**self.model_params)
-            else:
-                self.lazy_model = None
-
-            if args.pip_checkpoint:
-                checkpoint_fullname = args.pip_checkpoint
-                checkpoint = torch.load(checkpoint_fullname, map_location=self.device)
-                try:
-                    self.lazy_model.load_state_dict(checkpoint['model_state_dict'], strict=True)
-                except:
-                    self.lazy_model.load_state_dict(checkpoint, strict=True)
-                try:
-                    print(
-                        ">> Load lazy PIP-D model from {} [Accuracy: {:.4f}%; Infeasible: {:.4f}%; Feasible: {:.4f}%]".format(
-                            checkpoint_fullname, checkpoint['accuracy'] * 100, checkpoint['infsb_accuracy'] * 100,
-                            checkpoint['fsb_accuracy'] * 100))
-                    if "fsb_accuracy_bsf.pt" in checkpoint_fullname:
-                        self.fsb_accuracy_bsf = checkpoint['fsb_accuracy']
-                    elif "infsb_accuracy_bsf.pt" in checkpoint_fullname:
-                        self.infsb_accuracy_bsf = checkpoint['infsb_accuracy']
-                    else:
-                        self.accuracy_bsf = checkpoint['accuracy']
-                except:
-                    print(">> Load lazy PIP-D model from {}".format(checkpoint_fullname))
-
         # Restore
         self.start_epoch = 1
         if args.checkpoint is not None:
@@ -107,31 +60,6 @@ class Trainer:
         for epoch in range(self.start_epoch, self.trainer_params['epochs']+1):
             print('================================================================================')
 
-            # Load the latest updated PIP model for PI masking prediction
-            if self.model_params["pip_decoder"]:
-                if epoch not in self.train_sl_epoch_list:
-                    print('>> PIP decoder is not training...')
-                    self.is_train_pip_decoder = False
-                    self.model_params["generate_PI_mask"] = False
-                    if self.trainer_params["lazy_pip_model"] and (epoch in self.load_sl_epoch_list) and epoch != self.start_epoch: # if epoch == start_epoch, ckpt already loaded or it is training (no need to load)
-                        pip_checkpoint = {"last_epoch": "epoch-{}.pt".format(epoch - 1),
-                                           "train_fsb_bsf": "fsb_accuracy_bsf.pt",
-                                           "train_infsb_bsf": "infsb_accuracy_bsf.pt",
-                                           "train_accuracy_bsf": "accuracy_bsf.pt"}
-                        checkpoint_fullname = os.path.join(self.log_path, pip_checkpoint[self.trainer_params["load_which_pip"]])
-                        checkpoint = torch.load(checkpoint_fullname, map_location=self.device)
-                        try:
-                            self.lazy_model.load_state_dict(checkpoint['model_state_dict'], strict=True)
-                        except:
-                            self.lazy_model.load_state_dict(checkpoint, strict=True)
-                        try:
-                            print(">> Load lazy PIP-D model from {} [Accuracy: {:.4f}%; Infeasible: {:.4f}%; Feasible: {:.4f}%]".format(checkpoint_fullname, checkpoint['accuracy']*100, checkpoint['infsb_accuracy']*100, checkpoint['fsb_accuracy']*100))
-                        except:
-                            print(">> Load lazy PIP-D model from {}".format(checkpoint_fullname))
-                else:
-                    print('>> PIP decoder is training...')
-                    self.is_train_pip_decoder = True
-                    self.model_params["generate_PI_mask"] = True
 
             # Update penalty factor if you want to train it in a curriculum learning way
             if self.trainer_params["penalty_increase"]:
@@ -271,8 +199,6 @@ class Trainer:
             feasible_dist_mean_AM, feasible_dist_max_pomo_mean_AM = AverageMeter(), AverageMeter()
         if self.trainer_params["timeout_reward"]:
             timeout_AM, timeout_nodes_AM = AverageMeter(), AverageMeter()
-        if self.model_params["pip_decoder"] and self.is_train_pip_decoder:
-            sl_loss_AM, accuracy_AM, infsb_accuracy_AM, fsb_accuracy_AM = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
 
         train_num_episode = self.trainer_params['train_episodes']
         total_step = math.floor(train_num_episode /self.trainer_params['train_batch_size'])
@@ -285,76 +211,7 @@ class Trainer:
                 env = random.sample(self.envs, 1)[0](**self.env_params)
                 data = env.get_random_problems(batch_size, self.env_params["problem_size"])
 
-                avg_score, avg_loss, infeasible, sl_output = self._train_one_batch(data, env, accumulation_step=accumulation_step)
-
-                if sl_output is not None and self.model_params["pip_decoder"]:
-                    sl_loss, accuracy, infsb_accuracy, infsb_samples, fsb_accuracy, fsb_samples = sl_output
-
-                    sl_loss_AM.update(sl_loss, infsb_samples+fsb_samples)
-                    accuracy_AM.update(accuracy, infsb_samples+fsb_samples)
-                    infsb_accuracy_AM.update(infsb_accuracy, infsb_samples)
-                    fsb_accuracy_AM.update(fsb_accuracy, fsb_samples)
-
-                    if self.tb_logger:
-                        self.tb_logger.log_value('sl_batch/sl_loss', sl_loss, (epoch-1) * total_step + batch_id)
-                        self.tb_logger.log_value('sl_batch/accuracy', accuracy, (epoch-1) * total_step + batch_id)
-                        self.tb_logger.log_value('sl_batch/infsb_accuracy', infsb_accuracy, (epoch-1) * total_step + batch_id)
-                        self.tb_logger.log_value('sl_batch/infsb_samples_number', infsb_samples, (epoch-1) * total_step + batch_id)
-                        self.tb_logger.log_value('sl_batch/fsb_accuracy', fsb_accuracy, (epoch-1) * total_step + batch_id)
-                        self.tb_logger.log_value('sl_batch/fsb_samples_number', fsb_samples, (epoch-1) * total_step + batch_id)
-                    if self.wandb_logger:
-                        wandb.log({'sl_batch/sl_loss': sl_loss})
-                        wandb.log({'sl_batch/accuracy': accuracy})
-                        wandb.log({'sl_batch/infsb_accuracy': infsb_accuracy})
-                        wandb.log({'sl_batch/infsb_samples_number': infsb_samples})
-                        wandb.log({'sl_batch/fsb_accuracy': fsb_accuracy})
-                        wandb.log({'sl_batch/fsb_samples_number': fsb_samples})
-
-                    if self.trainer_params["pip_save"] == "batch":
-                        self.accuracy_isbsf = True if accuracy > self.accuracy_bsf else False
-                        self.fsb_accuracy_isbsf = True if fsb_accuracy > self.fsb_accuracy_bsf else False
-                        self.infsb_accuracy_isbsf = True if infsb_accuracy > self.infsb_accuracy_bsf else False
-
-                        self.accuracy_bsf = accuracy if accuracy > self.accuracy_bsf else self.accuracy_bsf
-                        self.fsb_accuracy_bsf = fsb_accuracy if fsb_accuracy > self.fsb_accuracy_bsf else self.fsb_accuracy_bsf
-                        self.infsb_accuracy_bsf = infsb_accuracy if infsb_accuracy > self.infsb_accuracy_bsf else self.infsb_accuracy_bsf
-
-                        if self.accuracy_isbsf:
-                            if not os.path.exists('{}/accuracy_bsf.pt'.format(self.log_path)) or (infsb_accuracy > 0.75 and fsb_accuracy > 0.75):
-                                print("Saving BSF accuracy ({:.4f}%) trained_model [Accuracy: {:.4f}%, Infeasible: {:.4f}%, Feasible: {:.4f}%]".format( self.accuracy_bsf * 100, accuracy* 100, infsb_accuracy* 100, fsb_accuracy* 100))
-                                checkpoint_dict = {
-                                    'epoch': epoch,
-                                    'model_state_dict': self.model.state_dict(),
-                                    'accuracy': accuracy,
-                                    'fsb_accuracy': fsb_accuracy,
-                                    'infsb_accuracy': infsb_accuracy,
-                                }
-                                torch.save(checkpoint_dict, '{}/accuracy_bsf.pt'.format(self.log_path))
-                        if self.fsb_accuracy_isbsf:
-                            if not os.path.exists('{}/fsb_accuracy_bsf.pt'.format(self.log_path)) or (infsb_accuracy > 0.75) or (infsb_accuracy > 0.6 and self.problem=="TSPDL"):
-                                print("Saving BSF Feasible accuracy ({:.4f}%) trained_model [Accuracy: {:.4f}%, Infeasible: {:.4f}%, Feasible: {:.4f}%]".format(
-                                        self.fsb_accuracy_bsf * 100, accuracy * 100, infsb_accuracy * 100, fsb_accuracy * 100))
-                                checkpoint_dict = {
-                                    'epoch': epoch,
-                                    'model_state_dict': self.model.state_dict(),
-                                    'accuracy': accuracy,
-                                    'fsb_accuracy': fsb_accuracy,
-                                    'infsb_accuracy': infsb_accuracy,
-                                }
-                                torch.save(checkpoint_dict, '{}/fsb_accuracy_bsf.pt'.format(self.log_path))
-                        if self.infsb_accuracy_isbsf:
-                            if not os.path.exists('{}/infsb_accuracy_bsf.pt'.format(self.log_path)) or (fsb_accuracy > 0.75)or (fsb_accuracy > 0.6 and self.problem=="TSPDL"):
-                                print("Saving BSF Infeasible accuracy ({:.4f}%) trained_model [Accuracy: {:.4f}%, Infeasible: {:.4f}%, Feasible: {:.4f}%]".format(
-                                        self.infsb_accuracy_bsf * 100, accuracy * 100, infsb_accuracy * 100,
-                                        fsb_accuracy * 100))
-                                checkpoint_dict = {
-                                    'epoch': epoch,
-                                    'model_state_dict': self.model.state_dict(),
-                                    'accuracy': accuracy,
-                                    'fsb_accuracy': fsb_accuracy,
-                                    'infsb_accuracy': infsb_accuracy,
-                                }
-                                torch.save(checkpoint_dict, '{}/infsb_accuracy_bsf.pt'.format(self.log_path))
+                avg_score, avg_loss, infeasible = self._train_one_batch(data, env, accumulation_step=accumulation_step)
 
                 if isinstance(infeasible, dict):
                     sol_infeasible_rate = infeasible["sol_infeasible_rate"]
@@ -506,97 +363,22 @@ class Trainer:
         env.load_problems(batch_size, problems=data, aug_factor=1)
         reset_state, _, _ = env.reset()
         self.model.pre_forward(reset_state)
-        if self.model_params["pip_decoder"] and self.lazy_model is not None and (not self.is_train_pip_decoder):
-            self.lazy_model.eval()
-            self.lazy_model.pre_forward(reset_state)
 
         prob_list = torch.zeros(size=(batch_size, env.pomo_size, 0))
-        if self.model_params["pip_decoder"] and self.is_train_pip_decoder:
-            sl_loss_list = torch.zeros(size=(0,))
-            pred_LIST, label_LIST = np.array([]), np.array([])
 
         ########################################
         ############ POMO Rollout ##############
         ########################################
         state, reward, done = env.pre_step()
         while not done:
-            # Use PIP decoder to predict PI masking when the decoder is not trained.
-            use_predicted_PI_mask = True if (self.model_params['pip_decoder'] and not self.is_train_pip_decoder) else False
-            if self.model_params["pip_decoder"] and self.lazy_model is not None and env.selected_count >= 1 and (not self.is_train_pip_decoder):
-                with torch.no_grad():
-                    use_predicted_PI_mask = self.lazy_model(state, pomo=self.env_params["pomo_start"],
-                                                            use_predicted_PI_mask = False, no_select_prob= True,
-                                                            tw_end = env.node_tw_end if self.problem == "TSPTW" else None,
-                                                            no_sigmoid = (self.trainer_params["sl_loss"] == "BCEWithLogitsLoss"))
             # Forward
             selected, prob = self.model(state, pomo=self.env_params["pomo_start"],
-                                            use_predicted_PI_mask=use_predicted_PI_mask,
-                                            tw_end = env.node_tw_end if self.problem == "TSPTW" else None,
-                                            no_sigmoid = (self.trainer_params["sl_loss"] == "BCEWithLogitsLoss"))
-            # Calculate the loss for the PIP decoder
-            if self.model_params['pip_decoder']:
-                prob, probs_sl = prob
-                if self.model_params['pip_decoder'] and env.selected_count >= 1 and (env.selected_count < env.problem_size - 1) and self.is_train_pip_decoder:
-                    # FIXME: now still calculate the loss when left 2 nodes unvisited (not necessary?)
-                    visited_mask = env.visited_ninf_flag == float('-inf')
-                    if env.is_sparse: visited_mask = ~env.visited_and_notneigh_ninf_flag
-                    sl_losses = torch.tensor(0.)
-                    label = torch.where(env.simulated_ninf_flag == float('-inf'), 1., env.simulated_ninf_flag)
-                    label = label[~visited_mask]
-                    if label.sum() != 0 and label.sum() != label.reshape(-1).size(-1):  # not all fsb or all infsb
-                        probs_sl = probs_sl[~visited_mask]
-                        if self.trainer_params["label_balance_sampling"]:
-                            if self.trainer_params["fast_label_balance"]:
-                                # new version: accelerate the calculation of smaple weights
-                                assert self.trainer_params["sl_loss"] == "BCEWithLogitsLoss", "only BCEWithLogitsLoss (output with no sigmoid) is supported when label_balance_sampling==True with speedup!"
-                                infsb_sample_number = torch.nonzero(label != 0).size(0)  # positive
-                                fsb_sample_number = torch.nonzero(label == 0).size(0)  # negative
-                                pos_weight = fsb_sample_number / infsb_sample_number  # neg / pos
-                                pos_weight = torch.ones_like(label) * pos_weight
-                                criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-                                sl_loss = criterion(probs_sl, label)
-                                if self.trainer_params["fast_weight"]:
-                                    sl_weight = (fsb_sample_number + infsb_sample_number) / (2 * fsb_sample_number)
-                                    # with this weight, fast method totally equals to the non-fast one
-                                    sl_loss = sl_loss * sl_weight
-                            else:
-                                # assert self.trainer_params["sl_loss"] == "BCELoss", "only BCELoss is supported when label_balance_sampling==True without speedup!"
-                                edge_labels = (label != 0).int().cpu().numpy().flatten()
-                                edge_cw = compute_class_weight("balanced", classes=np.unique(edge_labels), y=edge_labels)
-                                if self.trainer_params["sl_loss"] == "BCELoss":
-                                    probs_sl = torch.clamp(probs_sl, min=1e-7, max=1 - 1e-7)  # add a clamp to avoid numerical instability
-                                    sl_loss = - edge_cw[1] * (label * torch.log(probs_sl)) - edge_cw[0] * (((1 - label) * torch.log(1 - probs_sl)))
-                                elif self.trainer_params["sl_loss"] == "BCEWithLogitsLoss":
-                                    sl_loss = - edge_cw[1] * (label * torch.log(F.sigmoid(probs_sl))) - edge_cw[0] * (((1 - label) * torch.log(1 - F.sigmoid(probs_sl))))
-                                else:
-                                    raise NotImplementedError(f"Unsupported sl_loss: {self.trainer_params['sl_loss']}")
-                                sl_loss = sl_loss.mean()
-                        else:
-                            if self.trainer_params["sl_loss"] == "BCEWithLogitsLoss":
-                                criterion = nn.BCEWithLogitsLoss()
-                            elif self.trainer_params["sl_loss"] == "BCELoss":
-                                criterion = nn.BCELoss()
-                            else:
-                                raise NotImplementedError(f"Unsupported sl_loss: {self.trainer_params['sl_loss']}")
-                            sl_loss = criterion(probs_sl, label)
-                        # sl_loss shape: (batch, pomo)
-                        label = label.reshape(-1)
-                        probs_sl = probs_sl.reshape(-1) if self.trainer_params["sl_loss"] != "BCEWithLogitsLoss" else F.sigmoid(probs_sl).reshape(-1)
-                        pred_LIST = np.append(pred_LIST, probs_sl.detach().cpu().numpy())
-                        label_LIST = np.append(label_LIST, label.detach().cpu().numpy())
-                        sl_losses += sl_loss
-                    sl_loss_list = torch.cat([sl_loss_list, sl_losses.unsqueeze(0)], dim=0)
-
-            # if True, then don't use predicted PI mask
-            use_predicted_PI_mask = ((not isinstance(use_predicted_PI_mask, bool)  # if True, PI mask is predicted from the PIP decoder
-                                      or use_predicted_PI_mask) # PIP decoder isn't training
-                                     or not self.trainer_params["use_real_PI_mask"])  # don't use real PI mask
+                                            tw_end = env.node_tw_end if self.problem == "TSPTW" else None)
 
             # Step
             state, reward, done, infeasible = env.step(selected,
                                                        out_reward = self.trainer_params["timeout_reward"],
                                                        generate_PI_mask = self.model_params["generate_PI_mask"],
-                                                       use_predicted_PI_mask = use_predicted_PI_mask,
                                                        pip_step = self.trainer_params["pip_step"])
             # print(">> Cause Infeasibility: Inlegal rate: {}".format(infeasible_rate))
 
@@ -656,26 +438,6 @@ class Trainer:
             log_prob = prob_list.log().sum(dim=2)
         loss = - advantage * log_prob  # Minus Sign: To Increase REWARD
         loss_mean = loss.mean()
-        # add SL loss
-        if self.model_params['pip_decoder'] and self.is_train_pip_decoder:
-            sl_loss_mean = sl_loss_list.mean()
-            loss_mean = sl_loss_mean if loss_mean.isnan() else loss_mean + sl_loss_mean
-        # Calculate the prediction accuracy
-        if self.model_params['pip_decoder'] and self.is_train_pip_decoder:
-            try:
-                tn, fp, fn, tp = confusion_matrix((label_LIST > self.trainer_params["decision_boundary"]).astype(np.int32),
-                                                  (pred_LIST > self.trainer_params["decision_boundary"]).astype(np.int32)).ravel()
-                accuracy = (tp + tn) / (tp + tn + fp + fn)
-                infsb_accuracy = tp / (fn + tp)
-                fsb_accuracy = tn / (tn + fp)
-            except:
-                accuracy = 0.
-                infsb_accuracy = 0.
-                fsb_accuracy = 0.
-                tn, fp, fn, tp = 0, 0, 0, 0
-
-            # tn, fp, fn, tp = confusion_matrix((labels > 0.5).int().cpu(), (F.sigmoid(predict_out) > 0.5).int().cpu()).ravel()
-            # print('Accuracy: {:.4f}% [Infeasible: {:.4f}% ({}), Feasible: {:.4f}% ({})]'.format(accuracy, infsb_accuracy, (fn + tp), fsb_accuracy, (tn + fp)))
 
         ########################################
         ############# Step & Return ############
@@ -702,59 +464,24 @@ class Trainer:
             score_mean = [dist_mean, timeout_mean, timeout_nodes_mean]
 
         loss_out = loss_mean.item()
-        if self.model_params['pip_decoder'] and self.is_train_pip_decoder:
-            sl_loss_out = sl_loss_list.mean().item()
-            return score_mean, loss_out, infeasible_output, [sl_loss_out, accuracy, infsb_accuracy, (fn + tp), fsb_accuracy, (tn + fp)]
-        else:
-            return score_mean, loss_out, infeasible_output, None
+        return score_mean, loss_out, infeasible_output
 
     def _val_one_batch(self, data, env, aug_factor=1, eval_type="argmax"):
         self.model.eval()
         self.model.set_eval_type(eval_type)
 
-        if self.model_params["pip_decoder"]:
-            pred_LIST, label_LIST = np.array([]), np.array([])
         batch_size = data.size(0) if isinstance(data, torch.Tensor) else data[-1].size(0)
         with torch.no_grad():
             env.load_problems(batch_size, problems=data, aug_factor=aug_factor, normalize=True)
             reset_state, _, _ = env.reset()
             self.model.pre_forward(reset_state)
-            if self.model_params["pip_decoder"] and (self.lazy_model is not None) and (not self.is_train_pip_decoder):
-                # ATTENTION: only use the predicted mask for validation when not training?
-                self.lazy_model.eval()
-                self.lazy_model.pre_forward(reset_state)
             state, reward, done = env.pre_step()
             while not done:
-
-                use_predicted_PI_mask = True if (self.model_params['pip_decoder'] and not self.is_train_pip_decoder) else False
-                # print(use_predicted_PI_mask)
-                if self.model_params["pip_decoder"] and self.lazy_model is not None and not (self.is_train_pip_decoder) and env.selected_count >= 1:
-                    use_predicted_PI_mask = self.lazy_model(state, pomo=self.env_params["pomo_start"],
-                                                            tw_end = env.node_tw_end if self.problem == "TSPTW" else None,
-                                                            use_predicted_PI_mask=False, no_select_prob=True)
                 selected, prob = self.model(state, pomo=self.env_params["pomo_start"],
-                                               tw_end = env.node_tw_end if self.problem == "TSPTW" else None,
-                                               use_predicted_PI_mask=use_predicted_PI_mask)
+                                               tw_end = env.node_tw_end if self.problem == "TSPTW" else None)
                 # shape: (batch, pomo)
-                # state, reward, done, infeasible = env.step(selected,timeout_reward=self.trainer_params["timeout_reward"])
-                if self.model_params['pip_decoder']:
-                    _, probs_sl = prob
-                    if self.model_params['pip_decoder'] and (env.selected_count >= 1) and (env.selected_count < env.problem_size - 1):
-                        label = torch.where(env.simulated_ninf_flag == float('-inf'), 1., env.simulated_ninf_flag)
-                        visited_mask = (env.visited_ninf_flag == float('-inf'))
-                        if env.is_sparse: visited_mask = ~env.visited_and_notneigh_ninf_flag
-                        label = label[~visited_mask]
-                        probs_sl = probs_sl[~visited_mask]
-                        pred_LIST = np.append(pred_LIST, probs_sl.detach().cpu().numpy())
-                        label_LIST = np.append(label_LIST, label.detach().cpu().numpy())
-
-                # ATTENTION: PIP-D always generate PI mask during validation
-                generate_PI_mask = True if self.model_params['pip_decoder'] else self.trainer_params["generate_PI_mask"]
-                # print(generate_PI_mask)
-                use_predicted_PI_mask = ((not isinstance(use_predicted_PI_mask, bool) or use_predicted_PI_mask==True) or not self.trainer_params["use_real_PI_mask"])
                 state, reward, done, infeasible = env.step(selected,
-                                                           generate_PI_mask=generate_PI_mask,
-                                                           use_predicted_PI_mask = use_predicted_PI_mask,
+                                                           generate_PI_mask=self.trainer_params["generate_PI_mask"],
                                                            pip_step = self.trainer_params["pip_step"])
 
         # Return
@@ -805,9 +532,7 @@ class Trainer:
             aug_score = -max_aug_pomo_reward.float()  # negative sign to make positive value
             infeasible_output = infeasible
 
-        if self.model_params["pip_decoder"]:
-            return no_aug_score, aug_score, infeasible_output, pred_LIST, label_LIST
-        return no_aug_score, aug_score, infeasible_output, None, None
+        return no_aug_score, aug_score, infeasible_output
 
     def _val_and_stat(self, dir, val_path, env, batch_size=500, val_episodes=1000, compute_gap=False, epoch=1):
         no_aug_score_list, aug_score_list, no_aug_gap_list, aug_gap_list, sol_infeasible_rate_list, ins_infeasible_rate_list = [], [], [], [], [], []
@@ -817,18 +542,14 @@ class Trainer:
         #     aug_total_timeout_score, aug_timeout_nodes_score = torch.zeros(0).to(self.device), torch.zeros(0).to(self.device)
         if self.trainer_params["fsb_dist_only"]:
             no_aug_feasible, aug_feasible = torch.zeros(0).to(self.device), torch.zeros(0).to(self.device)
-        if self.model_params["pip_decoder"]:
-            pred_LIST, label_LIST = np.array([]), np.array([])
-        if self.model_params["pip_decoder"] and (self.lazy_model is not None) and (not self.is_train_pip_decoder):
-            print(">> Use PIP-D predicted mask for validation...")
-        elif self.trainer_params["use_real_PI_mask"] and self.model_params["generate_PI_mask"]:
+        if self.trainer_params["use_real_PI_mask"] and self.model_params["generate_PI_mask"]:
             print(">> Use PI masking for validation...")
 
         while episode < val_episodes:
             remaining = val_episodes - episode
             bs = min(batch_size, remaining)
             data = env.load_dataset(os.path.join(dir, val_path), offset=episode, num_samples=bs)
-            no_aug, aug, infsb_rate, pred_list, label_list  = self._val_one_batch(data, env, aug_factor=8, eval_type="argmax")
+            no_aug, aug, infsb_rate = self._val_one_batch(data, env, aug_factor=8, eval_type="argmax")
             if isinstance(aug, list):
                 no_aug, no_aug_total_timeout, no_aug_timeout_nodes = no_aug
                 aug, aug_total_timeout, aug_timeout_nodes = aug
@@ -847,29 +568,6 @@ class Trainer:
             except:
                 pass
             episode += bs
-            if self.model_params["pip_decoder"]:
-                pred_LIST = np.append(pred_LIST, pred_list)
-                label_LIST = np.append(label_LIST, label_list)
-
-        if self.model_params["pip_decoder"]:
-            tn, fp, fn, tp = confusion_matrix((label_LIST > 0.5).astype(np.int32),(pred_LIST > 0.5).astype(np.int32)).ravel()
-            # tn, fp, fn, tp = confusion_matrix((labels > 0.5).int().cpu(), (F.sigmoid(predict_out) > 0.5).int().cpu()).ravel()
-            accuracy = (tp + tn) / (tp + tn + fp + fn)
-            infsb_accuracy = tp / (fn + tp)
-            fsb_accuracy = tn / (tn + fp)
-            if self.tb_logger:
-                self.tb_logger.log_value('val_sl/accuracy', accuracy, epoch)
-                self.tb_logger.log_value('val_sl/infsb_accuracy', infsb_accuracy, epoch)
-                self.tb_logger.log_value('val_sl/fsb_accuracy', fsb_accuracy, epoch)
-                self.tb_logger.log_value('val_sl/infsb_sample_nums', (label_LIST > 0.5).astype(np.int32).sum(), epoch)
-                self.tb_logger.log_value('val_sl/fsb_sample_nums', (label_LIST < 0.5).astype(np.int32).sum(), epoch)
-            if self.wandb_logger:
-                wandb.log({'val_sl/accuracy': accuracy})
-                wandb.log({'val_sl/infsb_accuracy': infsb_accuracy})
-                wandb.log({'val_sl/fsb_accuracy': fsb_accuracy})
-                wandb.log({'val_sl/infsb_sample_nums': (label_LIST > 0.5).astype(np.int32).sum()})
-                wandb.log({'val_sl/fsb_sample_nums': (label_LIST < 0.5).astype(np.int32).sum()})
-            print("PIP-D Validation, Auc: {:.4f}, Infeasible Auc: {:.4f} ({}), Feasible Auc: {:.4f} ({})".format(accuracy, infsb_accuracy,(fn + tp), fsb_accuracy,(tn + fp)))
         if self.trainer_params["fsb_dist_only"]:
             print(">> Only feasible solutions are under consideration!")
             no_aug_score_list.append(round(no_aug_score[no_aug_feasible.bool()].mean().item(), 4))

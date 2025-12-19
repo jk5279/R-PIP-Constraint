@@ -22,10 +22,9 @@ def args2dict(args):
                     "ff_hidden_dim": args.ff_hidden_dim, "norm": args.norm, "norm_loc": args.norm_loc,
                     "eval_type": args.eval_type, "problem": args.problem,
                     # PIP parameters
-                    "pip_decoder": args.pip_decoder, "tw_normalize": args.tw_normalize,
-                    "decision_boundary": args.decision_boundary, "detach_from_encoder": args.detach_from_encoder,
-                    "W_q_sl":args.W_q_sl, "W_out_sl": args.W_out_sl, "W_kv_sl": args.W_kv_sl,
-                    "use_ninf_mask_in_sl_MHA": args.use_ninf_mask_in_sl_MHA, "generate_PI_mask": args.generate_PI_mask,
+                    "tw_normalize": args.tw_normalize,
+                    "decision_boundary": args.decision_boundary,
+                    "generate_PI_mask": args.generate_PI_mask,
                     }
 
     optimizer_params = {"optimizer": {"lr": args.lr, "weight_decay": args.weight_decay},
@@ -46,10 +45,7 @@ def args2dict(args):
                       "fast_weight": args.fast_weight,
                       # PIP-related parameters
                       "generate_PI_mask": args.generate_PI_mask, "pip_step": args.pip_step,
-                      "use_real_PI_mask": args.use_real_PI_mask, "use_predicted_PI_mask": args.use_predicted_PI_mask,
-                      "lazy_pip_model": args.lazy_pip_model, "simulation_stop_epoch": args.simulation_stop_epoch,
-                      "pip_update_interval": args.pip_update_interval, "pip_last_growup": args.pip_last_growup,
-                      "pip_update_epoch": args.pip_update_epoch, "load_which_pip": args.load_which_pip, "pip_save": args.pip_save,
+                      "use_real_PI_mask": args.use_real_PI_mask,
                       }
 
     return env_params, model_params, optimizer_params, trainer_params
@@ -58,7 +54,7 @@ def args2dict(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Proactive Infeasibility Prevention (PIP) Framework for Routing Problems with Complex Constraints.")
     # env_params
-    parser.add_argument('--problem', type=str, default="TSPTW", choices=["TSPTW", "TSPDL"])
+    parser.add_argument('--problem', type=str, default="TSPTW", choices=["TSPTW"])
     parser.add_argument('--hardness', type=str, default="hard", choices=["hard", "medium", "easy"], help="Different levels of constraint hardness")
     parser.add_argument('--problem_size', type=int, default=50)
     parser.add_argument('--pomo_size', type=int, default=50, help="the number of start node, should <= problem size")
@@ -85,21 +81,6 @@ if __name__ == "__main__":
     parser.add_argument('--use_real_PI_mask', type=bool, default=True, help="whether to use PI masking")
     parser.add_argument('--pip_step', type=int, default=1)
     parser.add_argument('--k_sparse', type=int, default=500)
-    parser.add_argument("--use_predicted_PI_mask", type=bool, default=True, help="whether to use PIP-D masking")
-    parser.add_argument('--pip_decoder', action='store_true')
-    parser.add_argument('--W_q_sl', type=bool, default=True)
-    parser.add_argument('--W_out_sl', type=bool, default=True)
-    parser.add_argument('--W_kv_sl', type=bool, default=True)
-    parser.add_argument('--detach_from_encoder', type=bool, default=False)
-    parser.add_argument('--use_ninf_mask_in_sl_MHA', type=bool, default= False)
-    parser.add_argument('--lazy_pip_model', type=bool, default=True)
-    # update frequency
-    parser.add_argument('--simulation_stop_epoch', type=int, default=200) # use 100 when N=100
-    parser.add_argument('--pip_update_interval', type=int, default=1000)
-    parser.add_argument('--pip_update_epoch', type=int, default=50) # use 20 when N=100
-    parser.add_argument('--pip_last_growup', type=int, default=50)
-    parser.add_argument('--pip_save', type=str, default="epoch")
-    parser.add_argument('--load_which_pip', type=str, default="train_fsb_bsf", choices=["last_epoch", "train_fsb_bsf", "train_infsb_bsf", "train_accuracy_bsf"])
 
     # optimizer_params
     parser.add_argument('--lr', type=float, default=1e-4)
@@ -126,7 +107,6 @@ if __name__ == "__main__":
     # resume params
     parser.add_argument('--resume_path', type=str, default=None, help='path to the old run')
     parser.add_argument('--checkpoint', type=str, default=None)
-    parser.add_argument('--pip_checkpoint', type=str, default=None)
     parser.add_argument('--load_optimizer', type=bool, default=True)
     # sl loss params
     parser.add_argument('--decision_boundary', type=float, default=0.5)
@@ -157,8 +137,6 @@ if __name__ == "__main__":
         run_name += "_LM"
     if args.generate_PI_mask:
         run_name += f"_PIMask_{args.pip_step}Step"
-    if args.pip_decoder:
-        run_name += f"_PIPDecoder_UpdateFrequency_{args.simulation_stop_epoch}_{args.pip_update_interval}_{args.pip_update_epoch}_{args.pip_last_growup}"
     process_start_time = datetime.now(pytz.timezone("Asia/Singapore"))
     if args.resume_path is not None:
         args.log_path = args.resume_path

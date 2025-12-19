@@ -26,24 +26,6 @@ class Tester:
             # self.model.load_state_dict(checkpoint, strict=True)
         print(">> Checkpoint ({}) Loaded!".format(args.checkpoint))
 
-        if self.tester_params["lazy_pip_model"] and self.tester_params["use_predicted_PI_mask"]:
-            self.lazy_model = SINGLEModel(**self.model_params)
-        else:
-            self.lazy_model = None
-
-        if args.pip_checkpoint and self.tester_params["use_predicted_PI_mask"]:
-            checkpoint_fullname = args.pip_checkpoint
-            checkpoint = torch.load(checkpoint_fullname, map_location=self.device)
-            try:
-                self.lazy_model.load_state_dict(checkpoint['model_state_dict'], strict=True)
-            except:
-                self.lazy_model.load_state_dict(checkpoint, strict=True)
-            try:
-                print(">> Load lazy PIP-D model from {} [Accuracy: {:.4f}%; Infeasible: {:.4f}%; Feasible: {:.4f}%]".format(
-                        checkpoint_fullname, checkpoint['accuracy'] * 100, checkpoint['infsb_accuracy'] * 100,
-                                             checkpoint['fsb_accuracy'] * 100))
-            except:
-                print(">> Load lazy PIP-D model from {}".format(checkpoint_fullname))
 
         # load dataset
         if tester_params['test_set_path'] is None or tester_params['test_set_path'].endswith(".pkl"):
@@ -175,26 +157,13 @@ class Tester:
             env.load_problems(batch_size, problems=test_data, aug_factor=aug_factor, normalize=True)
             reset_state, _, _ = env.reset()
             self.model.pre_forward(reset_state)
-            if self.model_params["pip_decoder"] and self.lazy_model is not None:
-                self.lazy_model.eval()
-                self.lazy_model.pre_forward(reset_state)
 
         # POMO Rollout
         state, reward, done = env.pre_step()
         while not done:
 
-            use_predicted_PI_mask = True if (self.model_params['pip_decoder'] and self.tester_params['use_predicted_PI_mask']) else False
-            # print(use_predicted_PI_mask)
-            # if self.model_params["pip_decoder"] and self.lazy_model is not None and env.selected_count >= 1:
-            #     # use when not training the lazy PIP-D model
-            #     with torch.no_grad():
-            #         use_predicted_PI_mask = self.lazy_model(state, pomo=self.env_params["pomo_start"],
-            #                                       tw_end=env.node_tw_end if self.args.problem == "TSPTW" else None,
-            #                                       use_predicted_PI_mask=False, no_select_prob=True,
-            #                                       no_sigmoid=True)
             selected, prob = self.model(state, pomo=self.env_params["pomo_start"],
-                                                      tw_end=env.node_tw_end if self.args.problem == "TSPTW" else None,
-                                                      use_predicted_PI_mask=use_predicted_PI_mask, no_sigmoid=True)
+                                                      tw_end=env.node_tw_end if self.args.problem == "TSPTW" else None)
             # shape: (batch, pomo)
             state, reward, done, infeasible = env.step(selected,
                                                        generate_PI_mask=self.model_params["generate_PI_mask"],

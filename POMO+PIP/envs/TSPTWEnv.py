@@ -273,7 +273,7 @@ class TSPTWEnv:
         done = False
         return self.step_state, reward, done
 
-    def step(self, selected, visit_mask_only =True, out_reward = False, generate_PI_mask=False, use_predicted_PI_mask=False, pip_step=1):
+    def step(self, selected, visit_mask_only =True, out_reward = False, generate_PI_mask=False, pip_step=1):
         # selected.shape: (batch, pomo)
 
         # Dynamic-1
@@ -331,10 +331,9 @@ class TSPTWEnv:
         self.ninf_mask = self.visited_ninf_flag.clone()
         if not visit_mask_only:
             self.ninf_mask[out_of_tw] = float('-inf')
-        if generate_PI_mask and self.selected_count < self.problem_size -1 and (not use_predicted_PI_mask): # use PIP mask once not using mask from PIP-D
+        if generate_PI_mask and self.selected_count < self.problem_size -1:
             self.ninf_mask = torch.where(self.simulated_ninf_flag==float('-inf'), float('-inf'), self.ninf_mask)
             all_infsb = ((self.ninf_mask == float('-inf')).all(dim=-1)).unsqueeze(-1).expand(-1, -1, self.problem_size)
-            # all_infsb = ((self.simulated_ninf_flag==float('-inf')).all(dim=-1)).unsqueeze(-1).expand(-1,-1,self.problem_size)
             self.ninf_mask = torch.where(all_infsb, self.visited_ninf_flag, self.ninf_mask)
 
         # visited == 0 means not visited

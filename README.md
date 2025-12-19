@@ -1,35 +1,23 @@
-<h1 align="center"> Learning to Handle Complex Constraints for Vehicle Routing Problems </h1>
+# R-PIP-constraint
 
-<p align="center">
-<a href="https://neurips.cc/Conferences/2024"><img alt="License" src="https://img.shields.io/static/v1?label=NeurIPS'24&message=Vancouver&color=purple&style=flat-square"></a>&nbsp;&nbsp;&nbsp;&nbsp;
-<a href="https://neurips.cc/virtual/2024/poster/95638"><img alt="License" src="https://img.shields.io/static/v1?label=NeurIPS&message=Poster&color=blue&style=flat-square"></a>&nbsp;&nbsp;&nbsp;&nbsp;
-<a href="https://arxiv.org/abs/2410.21066"><img src="https://img.shields.io/static/v1?label=ArXiv&message=PDF&color=red&style=flat-square" alt="Paper"></a>&nbsp;&nbsp;&nbsp;&nbsp;
-<a href="https://neurips.cc/media/neurips-2024/Slides/95638_iCr6fb9.pdf"><img alt="License" src="https://img.shields.io/static/v1?label=Download&message=Slides&color=orange&style=flat-square"></a>&nbsp;&nbsp;&nbsp;&nbsp;
-<a href="https://github.com/jieyibi/PIP-constraint/blob/main/LICENSE"><img 
-alt="License" src="https://img.shields.io/static/v1?label=License&message=MIT&color=rose&style=flat-square"></a>
-</p>
+PyTorch implementation of the **Proactive Infeasibility Prevention (PIP)** framework for the Traveling Salesman Problem with Time Windows (TSPTW), built on [POMO](https://github.com/yd-kwon/POMO).
 
----
+## Overview
 
-Hi there! Thanks for your attention to our work!🤝
+This repository contains a streamlined implementation of the PIP framework focused on TSPTW. PIP is an effective approach that integrates Lagrangian multipliers to enhance constraint awareness and introduces preventative infeasibility masking to proactively guide solution construction.
 
-This is the PyTorch code for the **Proactive Infeasibility Prevention (PIP)** 
-framework implemented on [POMO](https://github.com/yd-kwon/POMO), [AM](https://github.com/wouterkool/attention-learn-to-route) and [GFACS](https://github.com/ai4co/gfacs).
+**Note:** This is a simplified version of the original [PIP-constraint](https://github.com/jieyibi/PIP-constraint) repository, containing only:
+- TSPTW problem implementation
+- POMO and POMO+PIP training and evaluation code
+- TSPTW datasets and pretrained models
 
-PIP is a generic and effective framework to advance the capabilities of 
-neural methods towards more complex VRPs. First, it integrates the Lagrangian 
-multiplier as a basis to enhance constraint awareness and introduces 
-preventative infeasibility masking to proactively steer the solution 
-construction process. Moreover, we present PIP-D, which employs an auxiliary 
-decoder and two adaptive strategies to learn and predict these tailored 
-masks, potentially enhancing performance while significantly reducing 
-computational costs during training. 
+## Paper
 
-For more details, please see our paper [Learning to Handle Complex 
-Constraints for Vehicle Routing Problems](https://arxiv.org/pdf/2410.21066), which has been accepted at 
-NeurIPS 2024😊. If you find our work useful, please cite:
+For more details, please see the original paper: [Learning to Handle Complex Constraints for Vehicle Routing Problems](https://arxiv.org/pdf/2410.21066), accepted at NeurIPS 2024.
 
-```
+If you find this work useful, please cite:
+
+```bibtex
 @inproceedings{
     bi2024learning,
     title={Learning to Handle Complex Constraints for Vehicle Routing Problems},
@@ -39,190 +27,95 @@ NeurIPS 2024😊. If you find our work useful, please cite:
     year={2024}
 }
 ```
----
-## How to play with PIP
-You could follow the command below to clone our repo and set up the running environment. 
 
-```
-git clone git@github.com:jieyibi/PIP-constraint.git
-cd PIP-constraint
+## Installation
+
+```bash
+git clone https://github.com/jk5279/R-PIP-Constraint.git
+cd R-PIP-constraint
 conda create -n pip python=3.12
 conda activate pip
-pip3 install torch torchvision torchaudio # Note: Please refer to your CUDA version and the official website of PyTorch!
+pip3 install torch torchvision torchaudio  # Install PyTorch based on your CUDA version
 pip install matplotlib tqdm pytz scikit-learn tensorflow tensorboard_logger pandas wandb
 ```
 
-
----
-
 ## Usage
 
-<details>
-    <summary><strong>Generate data</strong></summary>
+### Generate Data
 
-For evaluation, you can use our [provided datasets](https://github.com/jieyibi/PIP-constraint/tree/main/data) or generate data by running the following command under the `./POMO+PIP/` directory:
+Generate TSPTW instances for evaluation:
 
-```shell
-# Default: --problem_size=50 --problem="ALL" --hardness="hard"
-python generate_data.py --problem={PROBLEM} --problem_size={PROBLEM_SIZE} --hardness={HARDNESS}
+```bash
+cd POMO+PIP
+# Default: --problem_size=50 --problem="TSPTW" --hardness="hard"
+python generate_data.py --problem=TSPTW --problem_size=50 --hardness=hard
 ```
 
-</details>
+### Training
 
+Train POMO* or POMO* + PIP models:
 
-<details>
-    <summary><strong>Baseline</strong></summary>
+```bash
+cd POMO+PIP
 
-#### 1. LKH3 
+# Train POMO* baseline
+python train.py --problem=TSPTW --hardness=hard --problem_size=50 --pomo_size=50
 
-```shell
-# Default: --problem="TSPTW" --datasets="../data/TSPTW/tsptw50_medium.pkl"
-python LKH_baseline.py --problem={PROBLEM} --datasets={DATASET_PATH} -n=10000 -runs=1 -max_trials=10000
+# Train POMO* + PIP
+python train.py --problem=TSPTW --hardness=hard --problem_size=50 --pomo_size=50 --generate_PI_mask
+
+# Resume training (optional)
+python train.py --problem=TSPTW --hardness=hard --problem_size=50 --checkpoint=path/to/checkpoint.pt --resume_path=path/to/logs
 ```
 
+### Evaluation
 
-#### 2. OR-Tool
-```shell
-# Default: --problem="TSPTW" --datasets="../data/TSPTW/tsptw50_medium.pkl"
-python OR-Tools_baseline.py --problem={PROBLEM} --datasets={DATASET_PATH} -n=10000 -timelimit=20 
-# Optional arguments: `--cal_gap --opt_sol_path={OPTIMAL_SOLUTION_PATH}`
+Evaluate trained models:
+
+```bash
+cd POMO+PIP
+
+# Evaluate POMO* on provided dataset
+python test.py --problem=TSPTW --hardness=hard --problem_size=50 --checkpoint=pretrained/TSPTW/tsptw50_hard/POMO_star/epoch-10000.pt
+
+# Evaluate POMO* + PIP on provided dataset
+python test.py --problem=TSPTW --hardness=hard --problem_size=50 --checkpoint=pretrained/TSPTW/tsptw50_hard/POMO_star_PIP/epoch-10000.pt --generate_PI_mask
+
+# Evaluate on custom dataset
+python test.py --test_set_path=path/to/test_data.pkl --checkpoint=path/to/model.pt --generate_PI_mask
+# Optional: add --test_set_opt_sol_path=path/to/optimal_solutions.pkl to calculate optimality gap
 ```
 
+**Note:** Adjust `--aug_batch_size` or `--test_batch_size` based on your GPU memory constraints.
 
+## Repository Structure
 
-#### 3. Greedy
-##### 3.1 Greedy-L
-```shell
-# Default: --problem="TSPTW" --datasets="../data/TSPTW/tsptw50_medium.pkl"
-python greedy_parallel.py --problem={PROBLEM} --datasets={DATASET_PATH} --heuristics="length"
-# Optional arguments: `--cal_gap --optimal_solution_path={OPTIMAL_SOLUTION_PATH}`
+```
+R-PIP-constraint/
+├── POMO+PIP/          # Main implementation directory
+│   ├── envs/          # TSPTW environment
+│   ├── models/        # Neural network models
+│   ├── pretrained/    # Pretrained model checkpoints
+│   ├── train.py       # Training script
+│   ├── test.py        # Evaluation script
+│   └── generate_data.py  # Data generation script
+├── data/              # TSPTW datasets
+│   └── TSPTW/
+└── README.md
 ```
 
-##### 3.2 Greedy-C
-```shell
-# Default: --problem="TSPTW" --datasets="../data/TSPTW/tsptw50_medium.pkl" 
-python greedy_parallel.py --problem={PROBLEM} --datasets={DATASET_PATH} --heuristics="constraint"
-# Optional arguments: `--cal_gap --optimal_solution_path={OPTIMAL_SOLUTION_PATH}`
-```
+## Key Features
 
-</details>
-
-<details>
-    <summary><strong>POMO+PIP</strong></summary>
-
-## Train
-
-```shell
-# Default: --problem=TSPTW --hardness=hard --problem_size=50 --pomo_size=50 
-
-# 1. POMO*
-python train.py --problem={PROBLEM} --hardness={HARDNESS} --problem_size={PROBLEM_SIZE}
-
-# 2. POMO* + PIP
-python train.py --problem={PROBLEM} --hardness={HARDNESS} --problem_size={PROBLEM_SIZE} --generate_PI_mask
-
-# 3. POMO* + PIP-D
-python train.py --problem={PROBLEM} --hardness={HARDNESS} --problem_size={PROBLEM_SIZE} --generate_PI_mask --pip_decoder
-
-# Note: 
-# 1. If you want to resume, please add arguments: `--checkpoint`, `--pip_checkpoint` and `--resume_path`
-# 2. Please change the arguments `--simulation_stop_epoch` and `--pip_update_epoch` when training PIP-D on N=100
-```
-
-## Evaluation
-
-
-```shell
-# Default: --problem=TSPTW --problem_size=50 --hardness=hard
-
-# 1. POMO*
-
-# If you want to evaluate on your own dataset,
-python test.py --test_set_path={TEST_DATASET} --checkpoint={MODEL_PATH}
-# Optional: add `--test_set_opt_sol_path` to calculate optimality gap.
-
-# If you want to evaluate on the provided dataset,
-python test.py --problem={PROBLEM} --hardness={HARDNESS} --problem_size={PROBLEM_SIZE} --checkpoint={MODEL_PATH}
-
-# 2. POMO* + PIP(-D)
-
-# If you want to evaluate on your own dataset,
-python test.py --test_set_path={TEST_DATASET} --checkpoint={MODEL_PATH} --generate_PI_mask
-# Optional: add `--test_set_opt_sol_path` to calculate optimality gap.
-
-# If you want to evaluate on the provided dataset,
-python test.py --problem={PROBLEM} --hardness={HARDNESS} --problem_size={PROBLEM_SIZE} --checkpoint={MODEL_PATH} --generate_PI_mask
-
-
-# Please set your own `--aug_batch_size` or `--test_batch_size` (if no augmentation is used) based on your GPU memory constraint.
-```
-
-</details>
-
-<details>
-    <summary><strong>AM+PIP</strong></summary>
-
-## Train
-
-```shell
-# Default: --graph_size=50 --hardness=hard --CUDA_VISIBLE_ID=0
-
-# 1. AM*
-python run.py --graph_size={PROBLEM_SIZE} --hardness={HARDNESS}
-
-# 2. AM* + PIP
-python run.py --graph_size={PROBLEM_SIZE} --hardness={HARDNESS} --generate_PI_mask
-
-# 3. AM* + PIP-D
-python run.py --graph_size={PROBLEM_SIZE} --hardness={HARDNESS} --generate_PI_mask --pip_decoder
-
-# Note: If you want to resume, please add arguments: --pip_checkpoint and --resume
-```
-
-## Evaluation
-
-For evaluation, please download the data or generate datasets first. 
-Pretrained models are provided in the folder `./pretrained/`.
-
-```shell
-# Default: --graph_size=50 --hardness=hard --CUDA_VISIBLE_ID=0
-
-# 1. AM*
-
-# If you want to evaluate on your own dataset,
-python eval.py --datasets={DATASET} --model={MODEL_PATH}
-# Optional: add `--val_solution_path` to calculate optimality gap.
-
-# If you want to evaluate on the provided dataset,
-python eval.py --graph_size={PROBLEM_SIZE} --hardness={HARDNESS} --model={MODEL_PATH}
-
-# 2. AM* + PIP(-D)
-
-# If you want to evaluate on your own dataset,
-python eval.py --datasets={DATASET} --model={MODEL_PATH} --generate_PI_mask
-# Optional: add `--val_solution_path` to calculate optimality gap.
-
-# If you want to evaluate on the provided dataset,
-python eval.py --graph_size={PROBLEM_SIZE} --hardness={HARDNESS} --model={MODEL_PATH} --generate_PI_mask
-
-
-# Please set your own `--eval_batch_size` based on your GPU memory constraint.
-```
-
-</details>
-
-<details>
-    <summary><strong>GFACS+PIP</strong></summary>
-
-Code is not ready yet. It will be available soon.
-
-</details>
-
-
----
+- **POMO Integration**: Built on top of the POMO (Policy Optimization with Multiple Optima) framework
+- **PIP Framework**: Implements proactive infeasibility prevention through Lagrangian multipliers and masking
+- **TSPTW Focus**: Specialized implementation for Traveling Salesman Problem with Time Windows
+- **Pretrained Models**: Includes pretrained models for various problem sizes and hardness levels
 
 ## Acknowledgments
-https://github.com/yd-kwon/POMO  
-https://github.com/wouterkool/attention-learn-to-route  
-https://github.com/ai4co/gfacs  
-https://github.com/RoyalSkye/Routing-MVMoE
+
+- [POMO](https://github.com/yd-kwon/POMO) - Base framework
+- [Routing-MVMoE](https://github.com/RoyalSkye/Routing-MVMoE) - Multi-view Mixture of Experts architecture
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.

@@ -19,18 +19,16 @@ def args2dict(args):
                     "ff_hidden_dim": args.ff_hidden_dim, "norm": args.norm, "norm_loc": args.norm_loc,
                     "eval_type": args.eval_type, "problem": args.problem,
                     # PIP parameters
-                    "pip_decoder": args.pip_decoder, "tw_normalize": args.tw_normalize,
-                    "decision_boundary": args.decision_boundary, "detach_from_encoder": args.detach_from_encoder,
-                    "W_q_sl":args.W_q_sl, "W_out_sl": args.W_out_sl, "W_kv_sl": args.W_kv_sl,
-                    "use_ninf_mask_in_sl_MHA": args.use_ninf_mask_in_sl_MHA, "generate_PI_mask": args.generate_PI_mask,
+                    "tw_normalize": args.tw_normalize,
+                    "decision_boundary": args.decision_boundary,
+                    "generate_PI_mask": args.generate_PI_mask,
                     }
 
     tester_params = {"checkpoint": args.checkpoint, "test_episodes": args.test_episodes,
                      "test_batch_size": args.test_batch_size, "sample_size": args.sample_size,
                      "aug_factor": args.aug_factor, "aug_batch_size": args.aug_batch_size,
                      "test_set_path": args.test_set_path, "test_set_opt_sol_path": args.test_set_opt_sol_path,
-                     "fsb_dist_only": args.fsb_dist_only, "use_predicted_PI_mask": args.use_predicted_PI_mask,
-                     "lazy_pip_model": args.lazy_pip_model, "pip_step": args.pip_step,
+                     "fsb_dist_only": args.fsb_dist_only, "pip_step": args.pip_step,
                      "k_sparse": args.k_sparse, "output_best_tour_path": args.output_best_tour_path}
 
     return env_params, model_params, tester_params
@@ -39,7 +37,7 @@ def args2dict(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Proactive Infeasibility Prevention (PIP) Framework for Routing Problems with Complex Constraints.")
     # env_params
-    parser.add_argument('--problem', type=str, default="TSPTW", choices=["TSPTW", "TSPDL"])
+    parser.add_argument('--problem', type=str, default="TSPTW", choices=["TSPTW"])
     parser.add_argument('--hardness', type=str, default="hard", choices=["hard", "medium", "easy"], help="Different levels of constraint hardness")
     parser.add_argument('--problem_size', type=int, default=50)
     parser.add_argument('--pomo_size', type=int, default=1, help="the number of start node, should <= problem size")
@@ -55,25 +53,15 @@ if __name__ == "__main__":
     parser.add_argument('--ff_hidden_dim', type=int, default=512)
     parser.add_argument('--norm', type=str, default="instance", choices=["batch", "batch_no_track", "instance", "layer", "rezero", "none"])
     parser.add_argument('--norm_loc', type=str, default="norm_last", choices=["norm_first", "norm_last"], help="whether conduct normalization before MHA/FFN/MOE")
-    # PIP-D params
+    # PIP params
     parser.add_argument('--tw_normalize', type=bool, default=True)
-    parser.add_argument('--pip_decoder', type=bool, default=False)
-    parser.add_argument('--W_q_sl', type=bool, default=False)
-    parser.add_argument('--W_out_sl', type=bool, default=False)
-    parser.add_argument('--W_kv_sl', type=bool, default=False)
-    parser.add_argument('--lazy_pip_model', type=bool, default=False)
-    parser.add_argument('--load_which_pip', type=str, default="train_fsb_bsf", choices=["last_epoch", "train_fsb_bsf", "train_infsb_bsf", "train_accuracy_bsf"])
-    parser.add_argument('--detach_from_encoder', type=bool, default=False)
-    parser.add_argument('--use_ninf_mask_in_sl_MHA', type=bool, default= False)
     # PI masking params
     parser.add_argument('--generate_PI_mask', action='store_true')
     parser.add_argument('--pip_step', type=int, default=1)
     parser.add_argument('--k_sparse', type=int, default=500)
-    parser.add_argument('--use_predicted_PI_mask', type=bool, default=False)
     parser.add_argument('--decision_boundary', type=float, default=0.5)
     # tester_params
-    parser.add_argument('--checkpoint', type=str, default="pretrained/TSPTW/tsptw50_hard/POMO_star_PIP-D/epoch-10000.pt")
-    parser.add_argument('--pip_checkpoint', type=str, default=None)
+    parser.add_argument('--checkpoint', type=str, default="pretrained/TSPTW/tsptw50_hard/POMO_star_PIP/epoch-10000.pt")
     parser.add_argument('--test_episodes', type=int, default=10000)
     parser.add_argument('--test_batch_size', type=int, default=2500)
     parser.add_argument('--eval_type', type=str, default="argmax", choices=["argmax", "softmax"])
