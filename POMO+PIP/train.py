@@ -12,7 +12,7 @@ from utils import *
 def args2dict(args):
     env_params = {"problem_size": args.problem_size, "pomo_size": args.pomo_size, "hardness": args.hardness,
                   "pomo_start": args.pomo_start, "val_dataset": args.val_dataset, "val_episodes": args.val_episodes,
-                  "k_sparse": args.k_sparse}
+                  "k_sparse": args.k_sparse, "pip_buffer": args.pip_buffer}
 
     model_params = {
                     # original parameters in MvMOE for POMO
@@ -80,6 +80,7 @@ if __name__ == "__main__":
     parser.add_argument('--generate_PI_mask', action='store_true', help="whether to generates PI masking")
     parser.add_argument('--use_real_PI_mask', type=bool, default=True, help="whether to use PI masking")
     parser.add_argument('--pip_step', type=int, default=1)
+    parser.add_argument('--pip_buffer', type=float, default=1.4142135623730951, help="Buffer term added to distance calculations in PIP mask (default: sqrt(2))")
     parser.add_argument('--k_sparse', type=int, default=500)
 
     # optimizer_params

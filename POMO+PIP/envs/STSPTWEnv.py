@@ -83,6 +83,9 @@ class STSPTWEnv:
 
         # Stochastic noise parameters
         self.noise_max = np.sqrt(2)  # Maximum noise value U(0, sqrt(2))
+        
+        # PIP buffer parameter for distance calculations in lookahead
+        self.pip_buffer = env_params.get('pip_buffer', np.sqrt(2))  # Default to sqrt(2) for worst-case noise
 
         # Dynamic-1
         ####################################
@@ -397,7 +400,10 @@ class STSPTWEnv:
     def _calculate_PIP_mask(self, pip_step, selected):
 
         round_error_epsilon = 0.00001
-        next_arrival_time = torch.max(self.current_time[:, :, None] + (self.current_coord[:, :, None, :] - self.node_xy[:, None, :, :].expand(-1, self.pomo_size, -1, -1)).norm(p=2, dim=-1) / self.speed,
+        # Add PIP buffer to distance calculation for lookahead
+        distance = (self.current_coord[:, :, None, :] - self.node_xy[:, None, :, :].expand(-1, self.pomo_size, -1, -1)).norm(p=2, dim=-1)
+        distance_with_buffer = distance + self.pip_buffer
+        next_arrival_time = torch.max(self.current_time[:, :, None] + distance_with_buffer / self.speed,
                                  self.node_tw_start[:, None, :].expand(-1, self.pomo_size, -1))
         node_tw_end = self.node_tw_end[:, None, :].expand(-1, self.pomo_size, -1)
 
@@ -465,6 +471,8 @@ class STSPTWEnv:
             two_step_current_coord = first_step_current_coord.unsqueeze(2).repeat(1, 1, simulate_size, 1, 1)
             two_step_current_coord = torch.masked_select(two_step_current_coord, diag_element.unsqueeze(-1).expand(-1, -1, -1, -1, 2) == 0).reshape(self.batch_size, self.pomo_size, simulate_size, -1, 2)
             second_step_new_length = (two_step_current_coord - first_step_current_coord.unsqueeze(3).repeat(1, 1, 1, simulate_size - 1, 1)).norm(p=2, dim=-1)
+            # Add PIP buffer to distance calculation for lookahead
+            second_step_new_length = second_step_new_length + self.pip_buffer
             first_step_arrival_time = first_step_arrival_time.unsqueeze(-1).repeat(1, 1, 1, simulate_size - 1)
             second_step_arrival_time = torch.max(first_step_arrival_time + second_step_new_length / self.speed, two_step_tw_start) + two_step_node_service_time
 
@@ -514,6 +522,8 @@ class STSPTWEnv:
                 two_step_current_coord = first_step_current_coord.unsqueeze(2).repeat(1, 1, unvisited_size, 1, 1)
                 two_step_current_coord = torch.masked_select(two_step_current_coord, diag_element.unsqueeze(-1).expand(-1, -1, -1, -1, 2) == 0).reshape(self.batch_size, self.pomo_size, unvisited_size, -1, 2)
                 second_step_new_length = (two_step_current_coord - first_step_current_coord.unsqueeze(3).repeat(1, 1, 1, unvisited_size - 1, 1)).norm(p=2, dim=-1)
+                # Add PIP buffer to distance calculation for lookahead
+                second_step_new_length = second_step_new_length + self.pip_buffer
                 first_step_arrival_time = first_step_arrival_time.unsqueeze(-1).repeat(1, 1, 1, unvisited_size - 1)
                 second_step_arrival_time = torch.max(first_step_arrival_time + second_step_new_length / self.speed, two_step_tw_start) + two_step_node_service_time
 
@@ -540,6 +550,8 @@ class STSPTWEnv:
                 three_step_current_coord = two_step_current_coord.unsqueeze(3).expand(-1, -1, -1, unvisited_size - 1, -1, -1)
                 three_step_current_coord = torch.masked_select(three_step_current_coord, diag_element.unsqueeze(-1).expand(-1, -1, -1, -1, -1, 2) == 0).reshape(self.batch_size, self.pomo_size, unvisited_size, unvisited_size - 1, -1, 2)
                 third_step_new_length = (three_step_current_coord - two_step_current_coord.unsqueeze(4).expand(-1, -1, -1, -1, unvisited_size - 2, -1)).norm(p=2,  dim=-1)
+                # Add PIP buffer to distance calculation for lookahead
+                third_step_new_length = third_step_new_length + self.pip_buffer
                 second_step_arrival_time = second_step_arrival_time.unsqueeze(-1).repeat(1, 1, 1, 1, unvisited_size - 2)
                 third_step_arrival_time = torch.max(second_step_arrival_time + third_step_new_length / self.speed, three_step_tw_start) + three_step_node_service_time
                 del second_step_arrival_time, two_step_current_coord, diag_element, three_step_node_service_time, third_step_new_length, three_step_tw_start

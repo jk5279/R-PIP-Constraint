@@ -71,6 +71,9 @@ python train.py --problem=STSPTW --hardness=hard --problem_size=50 --pomo_size=5
 # Train POMO* + PIP
 python train.py --problem=STSPTW --hardness=hard --problem_size=50 --pomo_size=50 --generate_PI_mask
 
+# Train POMO* + PIP with custom buffer term (default: sqrt(2))
+python train.py --problem=STSPTW --hardness=hard --problem_size=50 --pomo_size=50 --generate_PI_mask --pip_buffer=1.5
+
 # Resume training (optional)
 python train.py --problem=STSPTW --hardness=hard --problem_size=50 --checkpoint=path/to/checkpoint.pt --resume_path=path/to/logs
 ```
@@ -87,6 +90,9 @@ python test.py --problem=STSPTW --hardness=hard --problem_size=50 --checkpoint=p
 
 # Evaluate POMO* + PIP on provided dataset
 python test.py --problem=STSPTW --hardness=hard --problem_size=50 --checkpoint=pretrained/STSPTW/stsptw50_hard/POMO_star_PIP/epoch-10000.pt --generate_PI_mask
+
+# Evaluate POMO* + PIP with custom buffer term (default: sqrt(2))
+python test.py --problem=STSPTW --hardness=hard --problem_size=50 --checkpoint=pretrained/STSPTW/stsptw50_hard/POMO_star_PIP/epoch-10000.pt --generate_PI_mask --pip_buffer=1.5
 
 # Evaluate on custom dataset
 python test.py --test_set_path=path/to/test_data.pkl --checkpoint=path/to/model.pt --generate_PI_mask
@@ -116,6 +122,7 @@ R-PIP-constraint/
 - **POMO Integration**: Built on top of the POMO (Policy Optimization with Multiple Optima) framework
 - **PIP Framework**: Implements proactive infeasibility prevention through Lagrangian multipliers and masking
 - **STSPTW Focus**: Specialized implementation for Stochastic Traveling Salesman Problem with Time Windows, where distance measurements include additive noise U(0, √2) sampled independently at each step
+- **PIP Buffer Term**: Configurable buffer term (default: √2) added to distance calculations in PIP lookahead filtering to account for stochastic noise uncertainty. Use `--pip_buffer` to adjust the buffer value.
 - **Unified Problem Generation**: All hardness levels use the same α/β-based generation method, making the system robust to distance function modifications
 - **Pretrained Models**: Includes pretrained models for various problem sizes and hardness levels
 
