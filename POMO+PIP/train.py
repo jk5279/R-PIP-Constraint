@@ -37,6 +37,16 @@ def args2dict(args):
                       "timeout_reward": args.timeout_reward, "timeout_node_reward": args.timeout_node_reward,
                       "fsb_dist_only": args.fsb_dist_only, "fsb_reward_only": args.fsb_reward_only,
                       "penalty_increase": args.penalty_increase, "penalty_factor": args.penalty_factor,
+                      # PID Lagrangian lambda (dynamic penalty_factor)
+                      "pid_lambda": args.pid_lambda,
+                      "pid_lambda_init": args.pid_lambda_init,
+                      "pid_lambda_kp": args.pid_lambda_kp,
+                      "pid_lambda_ki": args.pid_lambda_ki,
+                      "pid_lambda_kd": args.pid_lambda_kd,
+                      "pid_lambda_target": args.pid_lambda_target,
+                      "pid_lambda_ema_beta": args.pid_lambda_ema_beta,
+                      "pid_lambda_max": args.pid_lambda_max,
+                      "pid_lambda_update_interval": args.pid_lambda_update_interval,
                       # resume
                       "checkpoint": args.checkpoint, "pip_checkpoint": args.pip_checkpoint, "load_optimizer": args.load_optimizer,
                       # loss
@@ -105,6 +115,18 @@ if __name__ == "__main__":
     parser.add_argument('--fsb_reward_only', type=bool, default=True) # activate only if no penalty
     parser.add_argument('--penalty_increase', type=bool, default=False)
     parser.add_argument('--penalty_factor', type=float, default=1.)
+
+    # PID-Lagrangian lambda (dynamic penalty multiplier)
+    parser.add_argument('--pid_lambda', action='store_true',
+                        help="Enable PID controller to adapt lambda (replaces penalty_factor) using ins_infeasible_rate feedback")
+    parser.add_argument('--pid_lambda_init', type=float, default=0.1, help="Initial lambda value (default: 0.1)")
+    parser.add_argument('--pid_lambda_kp', type=float, default=0.1, help="PID proportional gain Kp (default: 0.1)")
+    parser.add_argument('--pid_lambda_ki', type=float, default=0.01, help="PID integral gain Ki (default: 0.01)")
+    parser.add_argument('--pid_lambda_kd', type=float, default=0.0, help="PID derivative gain Kd (default: 0.0)")
+    parser.add_argument('--pid_lambda_target', type=float, default=0.0, help="Target violation rate (default: 0.0)")
+    parser.add_argument('--pid_lambda_ema_beta', type=float, default=0.9, help="EMA beta for smoothing violation signal (default: 0.9)")
+    parser.add_argument('--pid_lambda_max', type=float, default=10.0, help="Upper bound for lambda (default: 10.0)")
+    parser.add_argument('--pid_lambda_update_interval', type=int, default=1, help="Update lambda every N epochs (default: 1)")
     # resume params
     parser.add_argument('--resume_path', type=str, default=None, help='path to the old run')
     parser.add_argument('--checkpoint', type=str, default=None)
@@ -140,13 +162,26 @@ if __name__ == "__main__":
     if args.generate_PI_mask:
         run_name += f"_PIMask_{args.pip_step}Step"
     process_start_time = datetime.now(pytz.timezone("Asia/Singapore"))
+
+    # Avoid log dir collisions when launching many SLURM jobs at once.
+    # Use SLURM job identifiers if available; otherwise fall back to PID.
+    slurm_job_id = os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_JOBID")
+    slurm_array_id = os.environ.get("SLURM_ARRAY_JOB_ID")
+    slurm_array_task_id = os.environ.get("SLURM_ARRAY_TASK_ID")
+    if slurm_array_id is not None and slurm_array_task_id is not None:
+        unique_tag = f"{slurm_array_id}_{slurm_array_task_id}"
+    elif slurm_job_id is not None:
+        unique_tag = str(slurm_job_id)
+    else:
+        unique_tag = str(os.getpid())
+
     if args.resume_path is not None:
         args.log_path = args.resume_path
+        name = os.path.basename(os.path.normpath(args.log_path))
     else:
-        name = process_start_time.strftime("%Y%m%d_%H%M%S") + run_name
+        name = process_start_time.strftime("%Y%m%d_%H%M%S") + run_name + f"_jid{unique_tag}"
         args.log_path = os.path.join(args.log_dir, name)
-    if not os.path.exists(args.log_path):
-        os.makedirs(args.log_path)
+    os.makedirs(args.log_path, exist_ok=False)
     print(">> Log Path: {}".format(args.log_path))
     # set gpu
     if args.multiple_gpu:

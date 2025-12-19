@@ -74,6 +74,13 @@ python train.py --problem=STSPTW --hardness=hard --problem_size=50 --pomo_size=5
 # Train POMO* + PIP with custom buffer term (default: sqrt(2))
 python train.py --problem=STSPTW --hardness=hard --problem_size=50 --pomo_size=50 --generate_PI_mask --pip_buffer=1.5
 
+# Train with PID-Lagrangian lambda (dynamic penalty multiplier)
+# Uses EMA-smoothed instance infeasible rate as feedback, targeting 0 violation.
+python train.py --problem=STSPTW --hardness=hard --problem_size=50 --pomo_size=50 \
+  --pid_lambda \
+  --pid_lambda_init=0.1 --pid_lambda_kp=0.1 --pid_lambda_ki=0.01 --pid_lambda_kd=0.0 \
+  --pid_lambda_target=0.0 --pid_lambda_ema_beta=0.9 --pid_lambda_max=10.0
+
 # Resume training (optional)
 python train.py --problem=STSPTW --hardness=hard --problem_size=50 --checkpoint=path/to/checkpoint.pt --resume_path=path/to/logs
 ```
@@ -123,6 +130,7 @@ R-PIP-constraint/
 - **PIP Framework**: Implements proactive infeasibility prevention through Lagrangian multipliers and masking
 - **STSPTW Focus**: Specialized implementation for Stochastic Traveling Salesman Problem with Time Windows, where distance measurements include additive noise U(0, √2) sampled independently at each step
 - **PIP Buffer Term**: Configurable buffer term (default: √2) added to distance calculations in PIP lookahead filtering to account for stochastic noise uncertainty. Use `--pip_buffer` to adjust the buffer value.
+- **PID-Lagrangian λ (Dynamic Penalty)**: Optional PID controller to adapt the penalty multiplier λ during training using EMA-smoothed `ins_infeasible_rate` feedback (default: λ0=0.1, Kp=0.1, Ki=0.01, Kd=0; λ bounded in [0, 10]). Enable via `--pid_lambda`.
 - **Unified Problem Generation**: All hardness levels use the same α/β-based generation method, making the system robust to distance function modifications
 - **Pretrained Models**: Includes pretrained models for various problem sizes and hardness levels
 

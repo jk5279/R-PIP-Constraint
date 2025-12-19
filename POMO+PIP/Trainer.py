@@ -6,6 +6,7 @@ from models.SINGLEModel import SINGLEModel
 from sklearn.utils.class_weight import compute_class_weight
 import os, wandb
 from sklearn.metrics import confusion_matrix
+from pid_lagrangian import PIDLambdaController
 
 class Trainer:
     def __init__(self, args, env_params, model_params, optimizer_params, trainer_params):
@@ -17,6 +18,7 @@ class Trainer:
         self.trainer_params = trainer_params
         self.problem = self.args.problem
         self.penalty_factor = args.penalty_factor
+        self.pid_lambda_controller = None
 
         self.device = args.device
         self.log_path = args.log_path
@@ -36,6 +38,7 @@ class Trainer:
 
         # Restore
         self.start_epoch = 1
+        checkpoint = None
         if args.checkpoint is not None:
             checkpoint_fullname = args.checkpoint
             checkpoint = torch.load(checkpoint_fullname, map_location=self.device)
@@ -52,6 +55,33 @@ class Trainer:
             print(">> Checkpoint (Epoch: {}) Loaded!".format(checkpoint['epoch']))
             print(">> Load from {}".format(checkpoint_fullname))
 
+        # PID-Lagrangian lambda controller (dynamic penalty factor)
+        if self.trainer_params.get("pid_lambda", False):
+            self.pid_lambda_controller = PIDLambdaController(
+                lambda_init=self.trainer_params.get("pid_lambda_init", 0.1),
+                Kp=self.trainer_params.get("pid_lambda_kp", 0.1),
+                Ki=self.trainer_params.get("pid_lambda_ki", 0.01),
+                Kd=self.trainer_params.get("pid_lambda_kd", 0.0),
+                target=self.trainer_params.get("pid_lambda_target", 0.0),
+                ema_beta=self.trainer_params.get("pid_lambda_ema_beta", 0.9),
+                lambda_min=0.0,
+                lambda_max=self.trainer_params.get("pid_lambda_max", 10.0),
+                integral_limit=None,
+                signal_clip=(0.0, 1.0),
+            )
+
+            # Restore controller state from checkpoint if available
+            if isinstance(checkpoint, dict) and "pid_lambda_state" in checkpoint:
+                try:
+                    self.pid_lambda_controller.load_state_dict(checkpoint["pid_lambda_state"])
+                    print(">> PID lambda controller state loaded from checkpoint.")
+                except Exception as e:
+                    print(f">> Warning: failed to load PID lambda state from checkpoint: {e}")
+
+            # PID lambda replaces penalty_factor
+            self.penalty_factor = self.pid_lambda_controller.get_lambda()
+            print(f">> PID lambda enabled. Initial lambda (penalty_factor) = {self.penalty_factor:.6f}")
+
         # utility
         self.time_estimator = TimeEstimator()
 
@@ -62,7 +92,7 @@ class Trainer:
 
 
             # Update penalty factor if you want to train it in a curriculum learning way
-            if self.trainer_params["penalty_increase"]:
+            if self.trainer_params["penalty_increase"] and self.pid_lambda_controller is None:
                 self.penalty_factor = 0.5 + epoch / self.trainer_params["epochs"] * 1.5
 
             # Train
@@ -82,6 +112,19 @@ class Trainer:
                     pass
             else:
                 sol_infeasible_rate, ins_infeasible_rate = infeasible
+
+            # PID-lambda update (uses ins_infeasible_rate feedback)
+            pid_info = None
+            if self.pid_lambda_controller is not None and 'ins_infeasible_rate' in locals():
+                update_interval = int(self.trainer_params.get("pid_lambda_update_interval", 1))
+                if update_interval <= 0:
+                    update_interval = 1
+                if (epoch % update_interval) == 0:
+                    try:
+                        pid_info = self.pid_lambda_controller.step(float(ins_infeasible_rate))
+                        self.penalty_factor = pid_info["lambda_val"]
+                    except Exception as e:
+                        print(f">> Warning: PID lambda update skipped due to error: {e}")
             if self.tb_logger:
                 self.tb_logger.log_value('train/train_score', train_score, epoch)
                 self.tb_logger.log_value('train/train_loss', train_loss, epoch)
@@ -90,6 +133,12 @@ class Trainer:
                     self.tb_logger.log_value('feasibility/instance_infeasible_rate', ins_infeasible_rate, epoch)
                 except:
                     pass
+                if self.pid_lambda_controller is not None:
+                    self.tb_logger.log_value('pid_lambda/lambda', self.penalty_factor, epoch)
+                    if pid_info is not None:
+                        self.tb_logger.log_value('pid_lambda/ema_error', pid_info["ema_error"], epoch)
+                        self.tb_logger.log_value('pid_lambda/signal', pid_info["signal"], epoch)
+                        self.tb_logger.log_value('pid_lambda/delta', pid_info["delta"], epoch)
                 if self.trainer_params["timeout_reward"]:
                     self.tb_logger.log_value("feasibility/total_timeout", total_timeout_reward, epoch)
                     self.tb_logger.log_value("feasibility/timeout_nodes", timeout_nodes_reward, epoch)
@@ -104,6 +153,12 @@ class Trainer:
                     wandb.log({'feasibility/instance_infeasible_rate': ins_infeasible_rate})
                 except:
                     pass
+                if self.pid_lambda_controller is not None:
+                    wandb.log({'pid_lambda/lambda': self.penalty_factor})
+                    if pid_info is not None:
+                        wandb.log({'pid_lambda/ema_error': pid_info["ema_error"]})
+                        wandb.log({'pid_lambda/signal': pid_info["signal"]})
+                        wandb.log({'pid_lambda/delta': pid_info["delta"]})
                 if self.trainer_params["timeout_reward"]:
                     wandb.log({"feasibility/total_timeout": total_timeout_reward})
                     wandb.log({"feasibility/timeout_nodes": timeout_nodes_reward})
@@ -139,6 +194,8 @@ class Trainer:
                     'scheduler_state_dict': self.scheduler.state_dict(),
                     'result_log': self.result_log,
                 }
+                if self.pid_lambda_controller is not None:
+                    checkpoint_dict["pid_lambda_state"] = self.pid_lambda_controller.state_dict()
                 torch.save(checkpoint_dict, '{}/epoch-{}.pt'.format(self.log_path, epoch))
 
 
