@@ -35,8 +35,17 @@ git clone https://github.com/jk5279/R-PIP-Constraint.git
 cd R-PIP-constraint
 conda create -n pip python=3.12
 conda activate pip
-pip3 install torch torchvision torchaudio  # Install PyTorch based on your CUDA version
-pip install matplotlib tqdm pytz scikit-learn tensorflow tensorboard_logger pandas wandb
+
+# Install PyTorch based on your CUDA version
+# For CUDA 12.x:
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# For CUDA 11.x:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+# For CPU only:
+# pip install torch torchvision torchaudio
+
+# Install remaining dependencies
+pip install -r requirements.txt
 ```
 
 ## Usage
