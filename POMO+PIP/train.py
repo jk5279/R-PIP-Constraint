@@ -161,6 +161,12 @@ if __name__ == "__main__":
         run_name += "_LM"
     if args.generate_PI_mask:
         run_name += f"_PIMask_{args.pip_step}Step"
+        # Include buffer parameter in directory name to distinguish PIP from PIP_Buffer
+        if hasattr(args, 'pip_buffer') and args.pip_buffer is not None:
+            run_name += f"_Buffer{args.pip_buffer:.2f}"
+    # Include PID identifier in directory name to distinguish PID variants from non-PID variants
+    if args.pid_lambda:
+        run_name += "_PID"
     process_start_time = datetime.now(pytz.timezone("Asia/Singapore"))
 
     # Avoid log dir collisions when launching many SLURM jobs at once.

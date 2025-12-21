@@ -18,8 +18,11 @@ class PIDLambdaState:
 
 class PIDLambdaController:
     """
-    PID controller for adapting a non-negative Lagrange multiplier (lambda).
-
+    PID controller (Position Form) for adapting a non-negative Lagrange multiplier.
+    
+    Fixes double-integration issue by mapping PID output directly to lambda value.
+    The 'Integral' term maintains the history necessary to enforce constraints.
+    
     Designed for noisy RL signals:
     - Uses EMA smoothing on the error signal (violation - target)
     - Integral windup protection via clamping
@@ -44,6 +47,8 @@ class PIDLambdaController:
         if ema_beta < 0.0 or ema_beta >= 1.0:
             raise ValueError(f"ema_beta must be in [0, 1); got {ema_beta}")
 
+        # Store parameters
+        self.lambda_init = float(lambda_init)  # Stored as bias
         self.Kp = float(Kp)
         self.Ki = float(Ki)
         self.Kd = float(Kd)
@@ -53,20 +58,22 @@ class PIDLambdaController:
         self.lambda_max = float(lambda_max)
         self.signal_clip = (float(signal_clip[0]), float(signal_clip[1]))
 
-        # Windup protection default: bound integral such that Ki * integral doesn't dwarf lambda_max.
-        # Use integral_limit = lambda_max / max(Ki, eps), but keep a sensible hard cap for Ki ~ 0.
+        # Windup protection
+        # In Position Form, the integral term alone can drive lambda up to lambda_max.
+        # So we limit the integral sum such that Ki * integral_limit approx lambda_max.
         if integral_limit is None:
             eps = 1e-8
             if abs(self.Ki) < eps:
                 integral_limit = 100.0
             else:
+                # Allow integral to cover the full range of lambda
                 integral_limit = self.lambda_max / max(abs(self.Ki), eps)
-                integral_limit = min(integral_limit, 100.0)
         self.integral_limit = float(abs(integral_limit))
 
-        lambda_init = float(lambda_init)
+        # Initialize state
+        # Note: We start with integral=0, so lambda starts at lambda_init
         self.state = PIDLambdaState(
-            lambda_val=_clamp(lambda_init, self.lambda_min, self.lambda_max),
+            lambda_val=_clamp(self.lambda_init, self.lambda_min, self.lambda_max),
             ema_error=0.0,
             error_integral=0.0,
             prev_ema_error=0.0,
@@ -76,33 +83,42 @@ class PIDLambdaController:
     def step(self, signal: float) -> Dict[str, float]:
         """
         Update lambda given a scalar constraint signal (e.g., infeasible rate).
-
-        Returns diagnostics dict with keys:
-        - lambda_val, signal, error, ema_error, error_integral, delta
+        Uses Position Form: Lambda = Bias + P + I + D
         """
         sig = float(signal)
         sig = _clamp(sig, self.signal_clip[0], self.signal_clip[1])
 
-        # Positive error means violating constraint, should increase lambda.
+        # Positive error = Violation (Need higher lambda)
         error = sig - self.target
 
+        # EMA smoothing
         if self.state.steps == 0:
             ema_error = error
         else:
             ema_error = self.ema_beta * self.state.ema_error + (1.0 - self.ema_beta) * error
 
         # Integral term with windup protection
+        # This accumulates the "pressure" needed to keep the agent safe
         error_integral = self.state.error_integral + ema_error
         error_integral = _clamp(error_integral, -self.integral_limit, self.integral_limit)
 
-        # Derivative term on the smoothed error
+        # Derivative term
         d_error = ema_error - self.state.prev_ema_error
 
-        delta = (self.Kp * ema_error) + (self.Ki * error_integral) + (self.Kd * d_error)
+        # --- POSITION FORM CALCULATION ---
+        # 1. Calculate the raw PID output
+        p_term = self.Kp * ema_error
+        i_term = self.Ki * error_integral
+        d_term = self.Kd * d_error
 
-        lambda_val = self.state.lambda_val + delta
-        lambda_val = _clamp(lambda_val, self.lambda_min, self.lambda_max)
+        # 2. Add to the base bias (lambda_init)
+        # This ensures that if all errors are 0, we return to the baseline (or stay high if I-term is high)
+        raw_lambda = self.lambda_init + p_term + i_term + d_term
 
+        # 3. Project to valid range
+        lambda_val = _clamp(raw_lambda, self.lambda_min, self.lambda_max)
+
+        # Update state
         self.state = PIDLambdaState(
             lambda_val=lambda_val,
             ema_error=ema_error,
@@ -117,7 +133,10 @@ class PIDLambdaController:
             "error": error,
             "ema_error": self.state.ema_error,
             "error_integral": self.state.error_integral,
-            "delta": delta,
+            "p_term": p_term,  # Helpful for debugging which term is dominant
+            "i_term": i_term,
+            "d_term": d_term,
+            "delta": p_term + i_term + d_term,  # For backward compatibility
         }
 
     def get_lambda(self) -> float:
@@ -126,6 +145,7 @@ class PIDLambdaController:
     def state_dict(self) -> Dict[str, Any]:
         return {
             "config": {
+                "lambda_init": self.lambda_init,  # Added to config
                 "Kp": self.Kp,
                 "Ki": self.Ki,
                 "Kd": self.Kd,
@@ -140,6 +160,14 @@ class PIDLambdaController:
         }
 
     def load_state_dict(self, d: Dict[str, Any]) -> None:
+        # Load config if present to ensure parameters match
+        if "config" in d:
+            config = d["config"]
+            self.lambda_init = float(config.get("lambda_init", self.lambda_init))
+            self.Kp = float(config.get("Kp", self.Kp))
+            self.Ki = float(config.get("Ki", self.Ki))
+            self.integral_limit = float(config.get("integral_limit", self.integral_limit))
+
         state = d.get("state", d)
         self.state = PIDLambdaState(
             lambda_val=float(state.get("lambda_val", self.state.lambda_val)),
